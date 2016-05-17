@@ -52,10 +52,6 @@ omp_lock_t gpulock[MAX_CUDA_DEVICES];
 #define GPU_CPU
 #endif
 
-#if 1
-#define CFKSP
-#endif
-
 
 extern bool num_auto_parallelize; // FIXME
 
@@ -107,6 +103,8 @@ int main_rjtsense(int argc, char* argv[])
 	bool load_ksp_wavg = false;
 	char ksp_wavg_name[100];
 
+	const char* phase_ref_name = NULL;
+
 	bool use_dab = false;
 	char vieworder_sort_name[100];
 	char vieworder_dab_name[100];
@@ -134,9 +132,25 @@ int main_rjtsense(int argc, char* argv[])
 	bool use_kacq = false;
 	int kacq_uid = 0;
 
+	bool use_cfksp = true;
+
 	int c;
-	while (-1 != (c = getopt(argc, argv, "W:NC:r:R:p:T:L:M:s:A:O:o:F:f:i:mhq:cu:gK:jB:td:D:k:"))) {
+	while (-1 != (c = getopt(argc, argv, "GP:yW:NC:r:R:p:T:L:M:s:A:O:o:F:f:i:mhq:cu:gK:jB:td:D:k:"))) {
 		switch(c) {
+
+			case 'G':
+				conf.positive = true;
+				conf.sconf.rvc = true;
+				break;
+
+			case 'P':
+				phase_ref_name = strdup(optarg);
+				break;
+
+			case 'y':
+				use_cfksp = false;
+				break;
+
 			case 'r':
 				conf.use_l1wav = true;
 				conf.lambda_l1wav = atof(optarg);
@@ -319,6 +333,7 @@ int main_rjtsense(int argc, char* argv[])
 
 	debug_print_jtsense_conf(DP_INFO, &conf);
 
+	long phase_dims[DIMS];
 	long sens_dims[DIMS];
 	long pat_dims[DIMS];
 	long img_dims[DIMS];
@@ -342,6 +357,7 @@ int main_rjtsense(int argc, char* argv[])
 	long odict_strs[DIMS];
 	long cfimg_strs[DIMS];
 	long bfimg_strs[DIMS];
+	long phase_strs[DIMS];
 
 
 	// -----------------------------------------------------------
@@ -354,9 +370,17 @@ int main_rjtsense(int argc, char* argv[])
 	complex float* ksp_flat_data = NULL;
 	complex float* pattern = NULL;
 
+	complex float* phase_ref = NULL;
+	if (NULL != phase_ref_name) {
+		phase_ref = load_cfl(phase_ref_name, DIMS, phase_dims);
+		md_calc_strides(DIMS, phase_strs, phase_dims, CFL_SIZE);
+	}
+
+
 	if (0 == mode) {
 
 		debug_printf(DP_INFO, "Legacy mode.\n");
+		use_cfksp = false;
 
 		ksp_full_data = load_cfl(argv[optind + 0], DIMS, ksp_full_dims);
 		md_select_dims(DIMS, ~(READ_FLAG | SENS_FLAGS), pat_dims, ksp_full_dims);
@@ -591,6 +615,7 @@ int main_rjtsense(int argc, char* argv[])
 
 	// dimensions and strides for one slice
 
+	long phase1_dims[DIMS];
 	long ksp1_flat_dims[DIMS];
 	long ksp1_dims[DIMS];
 	long img1_dims[DIMS];
@@ -599,6 +624,7 @@ int main_rjtsense(int argc, char* argv[])
 	long sens1_dims[DIMS];
 	long x1_dims[DIMS];
 
+	long phase1_strs[DIMS];
 	long ksp1_flat_strs[DIMS];
 	long ksp1_strs[DIMS];
 	long img1_strs[DIMS];
@@ -611,11 +637,18 @@ int main_rjtsense(int argc, char* argv[])
 	md_calc_strides(DIMS, ksp1_flat_strs, ksp1_flat_dims, CFL_SIZE);
 	
 	md_select_dims(DIMS, ~READ_FLAG, ksp1_dims, ksp1_flat_dims);
-#ifdef CFKSP
-	ksp1_dims[COEFF_DIM] = conf.K;
-#else
-	ksp1_dims[TE_DIM] = pat_dims[TE_DIM];
-#endif
+
+	if (use_cfksp)
+		ksp1_dims[COEFF_DIM] = conf.K;
+	else
+		ksp1_dims[TE_DIM] = pat_dims[TE_DIM];
+
+	if (NULL != phase_ref_name) {
+		md_select_dims(DIMS, ~READ_FLAG, phase1_dims, phase_dims);
+		md_calc_strides(DIMS, phase1_strs, phase1_dims, CFL_SIZE);
+	}
+
+
 	md_calc_strides(DIMS, ksp1_strs, ksp1_dims, CFL_SIZE);
 
 	md_select_dims(DIMS, ~READ_FLAG, img1_dims, img_dims);
@@ -683,7 +716,7 @@ int main_rjtsense(int argc, char* argv[])
 	for (int i = 0; i < ksp_flat_dims[READ_DIM]; i++) {
 
 #ifdef SINGLE_SLICE
-		if (i == 140 || i == 90) {
+		if (i == 120 || i == 100) {
 #endif
 
 		complex float* image1 = NULL;
@@ -699,10 +732,15 @@ int main_rjtsense(int argc, char* argv[])
 		complex float* bfimg1 = NULL;
 		complex float* odict1 = NULL;
 
+		complex float* phase1 = NULL;
+
 		if (conf.use_odict) {
 			odict1 = md_alloc(DIMS, odict_dims, CFL_SIZE);
 			bfimg1 = md_alloc(DIMS, bfimg1_dims, CFL_SIZE);
 		}
+
+		if (NULL != phase_ref_name)
+			phase1 = md_alloc(DIMS, phase1_dims, CFL_SIZE);
 
 		complex float* x_img1 = conf.use_odict ? bfimg1 : cfimg1;
 
@@ -732,22 +770,26 @@ int main_rjtsense(int argc, char* argv[])
 			//md_copy2(DIMS, bfimg1_dims, bfimg1_strs, bfimg1, bfimg_strs, ((char*)bfimg) + i * bfimg_strs[0], CFL_SIZE);
 		}
 
+		if (NULL != phase_ref_name)
+			md_copy2(DIMS, phase1_dims, phase1_strs, phase1, phase_strs, ((char*)phase_ref) + i * phase_strs[0], CFL_SIZE);
+
 		if (1 == mode) {
 
 			if (use_dab) {
 
-#ifdef CFKSP
+				if (use_cfksp) {
 
-				if (0 != cfksp_pat_from_view_files(DIMS, ksp1_dims, kspace1, pat_dims, pattern1, ksp1_flat_dims, ksp1_flat, basis_dims, basis1, conf.K, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name)) {
-					error("Error executing cfksp_pat_from_view_files\n");
+					if (0 != cfksp_pat_from_view_files(DIMS, ksp1_dims, kspace1, pat_dims, pattern1, ksp1_flat_dims, ksp1_flat, basis_dims, basis1, conf.K, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name)) {
+						error("Error executing cfksp_pat_from_view_files\n");
+					}
 				}
+				else {
 
-#else
-				if( 0 != ksp_from_view_files(DIMS, ksp1_dims, kspace1, ksp1_flat_dims, ksp1_flat, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name))
-					error("Error executing ksp_from_view_files\n");
+					if( 0 != ksp_from_view_files(DIMS, ksp1_dims, kspace1, ksp1_flat_dims, ksp1_flat, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name))
+						error("Error executing ksp_from_view_files\n");
 
-				estimate_pattern(DIMS, ksp1_dims, COIL_DIM, pattern1, kspace1);
-#endif
+					estimate_pattern(DIMS, ksp1_dims, COIL_DIM, pattern1, kspace1);
+				}
 			}
 			else {
 
@@ -793,7 +835,7 @@ int main_rjtsense(int argc, char* argv[])
 #endif
 
 				debug_printf(DP_DEBUG1, "GPU recon\n");
-				jtsense_recon_gpu(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL);
+				jtsense_recon_gpu(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL, use_cfksp, phase1_dims, phase1);
 #ifdef _OPENMP
 				omp_unset_lock(&gpulock[gpun]);
 #endif
@@ -801,7 +843,7 @@ int main_rjtsense(int argc, char* argv[])
 			else {
 				gpun = -1;
 				debug_printf(DP_DEBUG1, "CPU recon\n");
-				jtsense_recon(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL);
+				jtsense_recon(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL, use_cfksp, phase1_dims, phase1);
 			}
 #else
 				gpun = omp_thread_num % nr_cuda_devices;
@@ -811,7 +853,7 @@ int main_rjtsense(int argc, char* argv[])
 #endif
 
 				debug_printf(DP_DEBUG3, "GPU recon\n");
-				jtsense_recon_gpu(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL);
+				jtsense_recon_gpu(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL, use_cfksp, phase1_dims, phase1);
 #ifdef _OPENMP
 				omp_unset_lock(&gpulock[gpun]);
 #endif
@@ -821,7 +863,7 @@ int main_rjtsense(int argc, char* argv[])
 #endif
 		} else {
 			debug_printf(DP_DEBUG4, "CPU recon\n");
-			jtsense_recon(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL);
+			jtsense_recon(&conf, italgo, iconf, image1, cfimg1, bfimg1, kspace1, crop_dims, sens1_dims, sens1, pat_dims, pattern1, basis_dims, basis1, odict_dims, odict1, NULL, use_cfksp, phase1_dims, phase1);
 		}
 
 		double slice_time = timestamp() - slice_start_time;
@@ -832,10 +874,10 @@ int main_rjtsense(int argc, char* argv[])
 #else
 		if (use_gpu)
 #endif
-			debug_printf(DP_DEBUG2, "done with slice %d on GPU %d after %f seconds (thread %d)\n", i, gpun, slice_time, omp_thread_num);
+			debug_printf(DP_DEBUG3, "done with slice %d on GPU %d after %f seconds (thread %d)\n", i, gpun, slice_time, omp_thread_num);
 		else
 #endif
-			debug_printf(DP_DEBUG2, "done with slice %d after %f seconds (thread %d)\n", i, slice_time, omp_thread_num);
+			debug_printf(DP_DEBUG3, "done with slice %d after %f seconds (thread %d)\n", i, slice_time, omp_thread_num);
 
 		double save_start_time = timestamp();
 		if (save_img) {
@@ -852,10 +894,11 @@ int main_rjtsense(int argc, char* argv[])
 				//md_copy2(DIMS, bfimg1_dims, bfimg_strs, ((char*)bfimg) + i * bfimg_strs[0], bfimg1_strs, bfimg1, CFL_SIZE);
 
 		double save_time = timestamp() - save_start_time;
-		debug_printf(DP_DEBUG2, "done copying slice %d to volume after %f seconds (threadh %d)\n", i, save_time, omp_thread_num);
+		debug_printf(DP_DEBUG3, "done copying slice %d to volume after %f seconds (threadh %d)\n", i, save_time, omp_thread_num);
 
 		debug_printf(DP_DEBUG3, "freeing temporary memory %d\n", i);
 
+		md_free(phase1);
 		md_free(image1);
 		md_free(ksp1_flat);
 		md_free(kspace1);
@@ -872,9 +915,12 @@ int main_rjtsense(int argc, char* argv[])
 
 
 #pragma omp critical
-		{ debug_printf(DP_DEBUG2, "%04d/%04ld    \n", ++counter, ksp_flat_dims[0]); }
+		{
+			debug_printf(DP_DEBUG1, "%04d/%04ld    \n", ++counter, ksp_flat_dims[0]);
+			fflush(stdout);
+		}
 	}
-	debug_printf(DP_DEBUG2, "\n");
+	debug_printf(DP_DEBUG1, "\n");
 
 
 	// -----------------------------------------------------------
@@ -922,6 +968,11 @@ int main_rjtsense(int argc, char* argv[])
 
 	if (NULL != conf.l1wav_lambdas)
 		free(conf.l1wav_lambdas);
+
+	if (NULL != phase_ref_name) {
+		unmap_cfl(DIMS, phase_dims, phase_ref);
+		free((void*)phase_ref_name);
+	}
 
 	free(iconf);
 

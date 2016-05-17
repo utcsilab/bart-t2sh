@@ -32,6 +32,11 @@ struct jtsense_conf {
 	_Bool randshift;
 	_Bool zmean;
 
+	float modelerr;
+	int Kmodelerr;
+
+	_Bool positive;
+
 	_Bool use_l2;
 	float l2lambda;
 
@@ -72,7 +77,9 @@ void jtsense_recon(struct jtsense_conf* conf,
 		const long pat_dims[DIMS], const _Complex float* pattern,
 		const long basis_dims[DIMS], const _Complex float* basis,
 		const long odict_dims[DIMS], const _Complex float* odict, 
-		const _Complex float* x_truth);
+		const _Complex float* x_truth,
+		_Bool use_cfksp,
+		const long phase_dims[DIMS], const _Complex float* phase_ref);
 
 #ifdef USE_CUDA
 void jtsense_recon_gpu(struct jtsense_conf* conf,
@@ -83,7 +90,9 @@ void jtsense_recon_gpu(struct jtsense_conf* conf,
 		const long pat_dims[DIMS], const _Complex float* pattern,
 		const long basis_dims[DIMS], const _Complex float* basis,
 		const long odict_dims[DIMS], const _Complex float* odict, 
-		const _Complex float* x_truth);
+		const _Complex float* x_truth,
+		_Bool use_cfksp,
+		const long phase_dims[DIMS], const _Complex float* phase_ref);
 #endif
 
 

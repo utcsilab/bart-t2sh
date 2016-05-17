@@ -29,9 +29,6 @@
 #include "jtmodel.h"
 
 
-#if 1
-#define CFKSP
-#endif
 
 struct jtmodel_data {
 
@@ -45,6 +42,8 @@ struct jtmodel_data {
 	const struct operator_s* stkern_op;
 
 	complex float* cfksp;
+
+	bool use_cfksp;
 
 };
 
@@ -207,46 +206,46 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 
 static void jtmodel_forward(const void* _data, complex float* dst, const complex float* src)
 {
-#ifdef CFKSP
-	error("#ifdef CFKSP is on - TODO: implement compact forward op\n");
-	UNUSED(src);
-	UNUSED(dst);
-	UNUSED(_data);
-#else
 	const struct jtmodel_data* data = _data;
 
-	md_clear(DIMS, data->cfksp_dims, data->cfksp, CFL_SIZE);
+	if (data->use_cfksp) {
 
-	linop_forward_unchecked(data->sense_op, data->cfksp, src);
-	linop_forward_unchecked(data->temporal_op, dst, data->cfksp);
-	linop_forward_unchecked(data->sample_op, dst, dst);
-#endif
+		UNUSED(src);
+		UNUSED(dst);
+		UNUSED(_data);
+		error("use_cfksp is on - TODO: implement compact forward op\n");
+	}
+	else {
+
+		md_clear(DIMS, data->cfksp_dims, data->cfksp, CFL_SIZE);
+
+		linop_forward_unchecked(data->sense_op, data->cfksp, src);
+		linop_forward_unchecked(data->temporal_op, dst, data->cfksp);
+		linop_forward_unchecked(data->sample_op, dst, dst);
+	}
 }
 
 
 static void jtmodel_adjoint(const void* _data, complex float* dst, const complex float* src)
 {
 
-
-
-#ifdef CFKSP
-	const struct jtmodel_data* data = _data;
-	linop_adjoint_unchecked(data->sense_op, dst, src);
-
-#else
 	const struct jtmodel_data* data = _data;
 
-	complex float* ksp = md_alloc_sameplace(DIMS, data->ksp_dims, CFL_SIZE, src);
-	md_clear(DIMS, data->ksp_dims, ksp, CFL_SIZE);
+	if (data->use_cfksp)
+		linop_adjoint_unchecked(data->sense_op, dst, src);
+	else {
 
-	md_clear(DIMS, data->cfksp_dims, data->cfksp, CFL_SIZE);
+		complex float* ksp = md_alloc_sameplace(DIMS, data->ksp_dims, CFL_SIZE, src);
+		md_clear(DIMS, data->ksp_dims, ksp, CFL_SIZE);
 
-	linop_adjoint_unchecked(data->sample_op, ksp, src);
-	linop_adjoint_unchecked(data->temporal_op, data->cfksp, ksp);
-	linop_adjoint_unchecked(data->sense_op, dst, data->cfksp);
+		md_clear(DIMS, data->cfksp_dims, data->cfksp, CFL_SIZE);
 
-	md_free(ksp);
-#endif
+		linop_adjoint_unchecked(data->sample_op, ksp, src);
+		linop_adjoint_unchecked(data->temporal_op, data->cfksp, ksp);
+		linop_adjoint_unchecked(data->sense_op, dst, data->cfksp);
+
+		md_free(ksp);
+	}
 }
 //#endif
 
@@ -290,30 +289,32 @@ static void jtmodel_del(const void* _data)
 struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const struct linop_s* sense_op, const struct linop_s* temporal_op, const struct linop_s* sample_op,
 		const long pat_dims[DIMS], const complex float* pattern,
-		const long bas_dims[DIMS], const complex float* basis)
+		const long bas_dims[DIMS], const complex float* basis,
+		bool use_cfksp)
 {
 
 	struct jtmodel_data* data = xmalloc(sizeof(struct jtmodel_data));
 
 	data->sense_op = sense_op;
+	data->use_cfksp = use_cfksp; // true if writing compact op in terms of cfimg
 
-#ifdef CFKSP
+	if (use_cfksp) {
 
-	UNUSED(sample_op);
-	UNUSED(temporal_op);
+		UNUSED(sample_op);
+		UNUSED(temporal_op);
 
-	data->sample_op = NULL;
-	data->temporal_op = NULL;
-#else
-	data->sample_op = sample_op;
-	data->temporal_op = temporal_op;
-#endif
+		data->sample_op = NULL;
+		data->temporal_op = NULL;
 
-#ifdef CFKSP
-	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG), data->ksp_dims, max_dims);
-#else
-	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | TE_FLAG), data->ksp_dims, max_dims);
-#endif
+		md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG), data->ksp_dims, max_dims);
+	}
+	else {
+
+		data->sample_op = sample_op;
+		data->temporal_op = temporal_op;
+
+		md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | TE_FLAG), data->ksp_dims, max_dims);
+	}
 
 	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG), data->cfksp_dims, max_dims);
 
@@ -326,14 +327,11 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims);
 	data->stkern_op = stkern_op;
 
-#ifdef CFKSP
-	struct linop_s* jtmodel_op = linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, data, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
-#else
-	struct linop_s* jtmodel_op = linop_create(linop_codomain(sample_op)->N, linop_codomain(sample_op)->dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, data, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
-#endif
+	if (use_cfksp)
+		return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, data, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
+	else
+		return linop_create(linop_codomain(sample_op)->N, linop_codomain(sample_op)->dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, data, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
 
-
-	return jtmodel_op;
 }
 
 

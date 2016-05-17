@@ -29,10 +29,6 @@
 #include "misc/debug.h"
 
 
-#if 1
-#define CFKSP
-#endif
-
 #ifndef DIMS
 #define DIMS KSPACE_DIMS
 #endif
@@ -102,12 +98,46 @@ int main_jtsense(int argc, char* argv[])
 	int delta = 0;
 	float lam = 0.f;
 
+	float scaling = 0.;
+
 	bool use_kacq = false;
 	int kacq_uid = 0;
 
+	bool use_cfksp = true;
+
+	const char* phase_ref_name = NULL;
+
 	int c;
-	while (-1 != (c = getopt(argc, argv, "NC:r:R:p:T:L:M:s:A:O:o:F:f:i:mhq:cu:gK:jB:tzd:D:k:"))) {
+	while (-1 != (c = getopt(argc, argv, "GP:J:e:yS:NC:r:R:p:T:L:M:s:A:O:o:F:f:i:mhq:cu:gK:jB:tzd:D:k:"))) {
 		switch(c) {
+
+			case 'G':
+				conf.positive = true;
+				conf.sconf.rvc = true;
+				break;
+
+			case 'P':
+				phase_ref_name = strdup(optarg);
+				break;
+
+			case 'J':
+				conf.Kmodelerr = atoi(optarg);
+				break;
+
+			case 'e':
+				conf.modelerr = atof(optarg);
+				if (0 == conf.Kmodelerr)
+					conf.Kmodelerr = conf.K * 2;
+				break;
+
+			case 'y':
+				use_cfksp = false;
+				break;
+
+			case 'S':
+				scaling = atof(optarg);
+				break;
+
 			case 'r':
 				conf.use_l1wav = true;
 				conf.lambda_l1wav = atof(optarg);
@@ -297,6 +327,7 @@ int main_jtsense(int argc, char* argv[])
 
 	debug_print_jtsense_conf(DP_INFO, &conf);
 
+	long phase_dims[DIMS];
 	long sens_dims[DIMS];
 	long pat_dims[DIMS];
 	long img_dims[DIMS];
@@ -320,6 +351,8 @@ int main_jtsense(int argc, char* argv[])
 
 	complex float* kspace_data = NULL;
 
+	complex float* phase_ref = NULL == phase_ref_name ? NULL : load_cfl(phase_ref_name, DIMS, phase_dims);
+
 	long ksp_flat_dims[DIMS];
 
 	// expand kspace into time bins if flat
@@ -328,15 +361,16 @@ int main_jtsense(int argc, char* argv[])
 		ksp_flat = load_cfl(argv[optind + 0], DIMS, ksp_flat_dims);
 
 		md_copy_dims(DIMS, ksp_dims, ksp_flat_dims);
-#ifdef CFKSP
-		ksp_dims[COEFF_DIM] = conf.K;
-#else
-		ksp_dims[TE_DIM] = basis_dims[TE_DIM];
-#endif
+
+		if (use_cfksp)
+			ksp_dims[COEFF_DIM] = conf.K;
+		else
+			ksp_dims[TE_DIM] = basis_dims[TE_DIM];
 
 		kspace_data = md_alloc(DIMS, ksp_dims, CFL_SIZE);
 
 		if (use_dab) {
+
 			if (false == use_kacq) {
 				sprintf(vieworder_sort_name, "%s.txt", argv[optind + 1]);
 				sprintf(vieworder_dab_name, "%s_dab.txt", argv[optind + 1]);
@@ -345,31 +379,32 @@ int main_jtsense(int argc, char* argv[])
 				sprintf(vieworder_dab_name, "%s_dab.txt.%d", argv[optind + 1], kacq_uid);
 			}
 
-#ifdef CFKSP
+			if (use_cfksp) {
 
-		debug_printf(DP_DEBUG1, "Computing cfksp adjoint and estimating pattern...");
+		debug_printf(DP_DEBUG1, "Computing cfksp adjoint and estimating pattern...\n");
 
 
-		md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG), pat_dims, ksp_dims);
-		pat_dims[TE_DIM] = basis_dims[TE_DIM];
+				md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG), pat_dims, ksp_dims);
+				pat_dims[TE_DIM] = basis_dims[TE_DIM];
 
-		pattern = md_alloc(DIMS, pat_dims, CFL_SIZE);
+				pattern = md_alloc(DIMS, pat_dims, CFL_SIZE);
 
-		if (0 != cfksp_pat_from_view_files(DIMS, ksp_dims, kspace_data, pat_dims, pattern, ksp_flat_dims, ksp_flat, basis_dims, basis, conf.K, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name)) {
-				error("Error executing cfksp_pat_from_view_files\n");
+				if (0 != cfksp_pat_from_view_files(DIMS, ksp_dims, kspace_data, pat_dims, pattern, ksp_flat_dims, ksp_flat, basis_dims, basis, conf.K, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name)) {
+					error("Error executing cfksp_pat_from_view_files\n");
+				}
+
+				debug_printf(DP_DEBUG1, " Done\n");
+
 			}
+			else {
+				if( 0 != ksp_from_view_files(DIMS, ksp_dims, kspace_data, ksp_flat_dims, ksp_flat, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name)) {
+					error("Error executing ksp_from_view_files\n");
+				}
 
-		debug_printf(DP_DEBUG1, " Done\n");
-
-#else
-		if( 0 != ksp_from_view_files(DIMS, ksp_dims, kspace_data, ksp_flat_dims, ksp_flat, e2s, skips_start, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_name, vieworder_dab_name)) {
-				error("Error executing ksp_from_view_files\n");
+				md_select_dims(DIMS, ~(SENS_FLAGS), pat_dims, ksp_dims); // copy the spatial and temporal ksp dimensions into the pattern
+				pattern = md_alloc(DIMS, pat_dims, CFL_SIZE);
+				estimate_pattern(DIMS, ksp_dims, COIL_DIM, pattern, kspace_data);
 			}
-
-			md_select_dims(DIMS, ~(SENS_FLAGS), pat_dims, ksp_dims); // copy the spatial and temporal ksp dimensions into the pattern
-			pattern = md_alloc(DIMS, pat_dims, CFL_SIZE);
-			estimate_pattern(DIMS, ksp_dims, COIL_DIM, pattern, kspace_data);
-#endif
 
 			fftmod(DIMS, ksp_dims, PHS2_FLAG, kspace_data, kspace_data);
 
@@ -395,6 +430,8 @@ int main_jtsense(int argc, char* argv[])
 	else {
 
 		debug_printf(DP_INFO, "Legacy mode.\n");
+		use_cfksp = false;
+
 		kspace_data = load_cfl(argv[optind + 0], DIMS, ksp_dims);
 
 		// allocate memory and estimate kspace sampling pattern
@@ -430,14 +467,10 @@ int main_jtsense(int argc, char* argv[])
 		}
 	}
 
-#ifdef CFKSP
-	if (ksp_dims[COEFF_DIM] != conf.K) {
+	if ((use_cfksp) && (ksp_dims[COEFF_DIM] != conf.K))
 		error("Coefficient dimension of kspace and basis does not match!\n");
-#else
-	if (ksp_dims[TE_DIM] != basis_dims[TE_DIM]) {
+	else if ((!use_cfksp) && (ksp_dims[TE_DIM] != basis_dims[TE_DIM]))
 		error("Temporal (TE) dimension of kspace and basis does not match!\n");
-#endif
-	}
 
 	assert(1 == ksp_dims[MAPS_DIM]);
 
@@ -458,25 +491,25 @@ int main_jtsense(int argc, char* argv[])
 	long samples = (long)pow(md_znorm(DIMS, pat_dims, pattern), 2.);
 	debug_printf(DP_INFO, "Size: %ld Samples: %ld Acc: %.2f\n", T, samples, (float)T/(float)samples); 
 
-	debug_printf(DP_DEBUG2, "img_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, img_dims);
-	debug_printf(DP_DEBUG2, "cfimg_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, cfimg_dims);
-	debug_printf(DP_DEBUG2, "ksp_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, ksp_dims);
-	debug_printf(DP_DEBUG2, "sens_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, sens_dims);
-	debug_printf(DP_DEBUG2, "basis_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, basis_dims);
-	debug_printf(DP_DEBUG2, "pat_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, pat_dims);
+	debug_printf(DP_DEBUG3, "img_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, img_dims);
+	debug_printf(DP_DEBUG3, "cfimg_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, cfimg_dims);
+	debug_printf(DP_DEBUG3, "ksp_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, ksp_dims);
+	debug_printf(DP_DEBUG3, "sens_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, sens_dims);
+	debug_printf(DP_DEBUG3, "basis_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, basis_dims);
+	debug_printf(DP_DEBUG3, "pat_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, pat_dims);
 	if (conf.use_odict)
 	{
-		debug_printf(DP_DEBUG2, "odict_dims =\t");
-		debug_print_dims(DP_DEBUG2, DIMS, odict_dims);
+		debug_printf(DP_DEBUG3, "odict_dims =\t");
+		debug_print_dims(DP_DEBUG3, DIMS, odict_dims);
 		if (conf.use_odict) {
-			debug_printf(DP_DEBUG2, "bfimg_dims =\t");
-			debug_print_dims(DP_DEBUG2, DIMS, bfimg_dims);
+			debug_printf(DP_DEBUG3, "bfimg_dims =\t");
+			debug_print_dims(DP_DEBUG3, DIMS, bfimg_dims);
 		}
 	}
 
@@ -506,8 +539,13 @@ int main_jtsense(int argc, char* argv[])
 	fftmod(DIMS, ksp_dims, FFT_FLAGS, kspace_data, kspace_data);
 
 
-	float scaling = jt_estimate_scaling(ksp_dims, NULL, kspace_data);
-	md_zsmul(DIMS, ksp_dims, kspace_data, kspace_data, 1. / scaling);
+	if (scaling == 0.)
+		scaling = jt_estimate_scaling(ksp_dims, NULL, kspace_data);
+	else
+		debug_printf(DP_DEBUG1, "Scaling: %f\n", scaling);
+
+	if (scaling != 0.)
+		md_zsmul(DIMS, ksp_dims, kspace_data, kspace_data, 1. / scaling);
 
 
 	// -----------------------------------------------------------
@@ -570,12 +608,12 @@ int main_jtsense(int argc, char* argv[])
 	
 	if (use_gpu)
 #ifdef USE_CUDA
-		jtsense_recon_gpu(&conf, italgo, iconf, image, cfimg, bfimg, kspace_data, crop_dims, sens_dims, sens_maps, pat_dims, pattern, basis_dims, basis, odict_dims, odict, x_truth);
+		jtsense_recon_gpu(&conf, italgo, iconf, image, cfimg, bfimg, kspace_data, crop_dims, sens_dims, sens_maps, pat_dims, pattern, basis_dims, basis, odict_dims, odict, x_truth, use_cfksp, phase_dims, phase_ref);
 #else
 		error("Recon code not compiled with CUDA.\n");
 #endif
 	else
-		jtsense_recon(&conf, italgo, iconf, image, cfimg, bfimg, kspace_data, crop_dims, sens_dims, sens_maps, pat_dims, pattern, basis_dims, basis, odict_dims, odict, x_truth);
+		jtsense_recon(&conf, italgo, iconf, image, cfimg, bfimg, kspace_data, crop_dims, sens_dims, sens_maps, pat_dims, pattern, basis_dims, basis, odict_dims, odict, x_truth, use_cfksp, phase_dims, phase_ref);
 	
 
 	// -----------------------------------------------------------
@@ -616,6 +654,11 @@ int main_jtsense(int argc, char* argv[])
 
 	if (NULL != conf.l1wav_lambdas)
 		free(conf.l1wav_lambdas);
+
+	if (NULL != phase_ref_name) {
+		unmap_cfl(DIMS, phase_dims, phase_ref);
+		free((void*)phase_ref_name);
+	}
 
 	free(iconf);
 

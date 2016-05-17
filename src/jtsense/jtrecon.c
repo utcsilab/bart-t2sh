@@ -28,7 +28,7 @@
 #include "linops/someops.h"
 #include "linops/rvc.h"
 #include "linops/sampling.h"
-//#include "linops/optest.h"
+#include "linops/optest.h"
 #include "linops/grad.h"
 
 #include "misc/io.h"
@@ -48,14 +48,7 @@
 
 #include "jtrecon.h"
 
-#if 1
-#define COMMUTE
-#endif
 
-
-#if 1
-#define CFKSP
-#endif
 
 const struct jtsense_conf jtsense_defaults = {
 	.K = 3,
@@ -64,6 +57,11 @@ const struct jtsense_conf jtsense_defaults = {
 	.crop = false,
 	.randshift = true,
 	.zmean = false,
+
+	.modelerr = 0.,
+	.Kmodelerr = 0,
+
+	.positive = false,
 
 	.use_l2 = false,
 	.l2lambda = 0.,
@@ -94,11 +92,7 @@ struct data {
 
 	const complex float* pattern;
   
-#ifdef COMMUTE
 	const struct linop_s* jtsense_op;
-#else
-	const struct linop_s* sense_op;
-#endif
 	const struct linop_s* temporal_op;
 	const struct operator_p_s* l1wavthresh_op;
 	const struct operator_p_s* lrthresh_op;
@@ -137,6 +131,58 @@ struct data2 {
 	const struct linop_s* A_op;
 	const obj_fun_t* obj_funs;
 };
+
+
+struct modelerr_data {
+	int K;
+	long cfimg_dims[DIMS];
+};
+
+
+static void modelerr_apply(const void* _data, complex float* dst, const complex float* src)
+{
+	const struct modelerr_data* data = _data;
+
+	long strs[DIMS];
+	md_calc_strides(DIMS, strs, data->cfimg_dims, CFL_SIZE);
+
+	long dims[DIMS];
+	md_select_dims(DIMS, ~COEFF_FLAG, dims, data->cfimg_dims);
+	dims[COEFF_DIM] = data->K;
+
+	// zero out the first K components
+	md_copy(DIMS, data->cfimg_dims, dst, src, CFL_SIZE);
+	md_clear2(DIMS, dims, strs, dst, CFL_SIZE);
+}
+
+
+static void modelerr_free(const void* data)
+{
+	free((void*)data);
+}
+
+#if 0
+static void modelerr_normal(const void* _data, complex float* dst, const complex float* src)
+{
+	const struct modelerr_data* data = _data;
+
+	modelerr_apply(_data, dst, src);
+	md_zsmul(DIMS, data->img_dims, dst, dst, -1.);
+}
+#endif
+
+static struct linop_s* modelerr_linop_create(const long cfimg_dims[DIMS], const int K)
+{
+	struct modelerr_data* data = xmalloc(sizeof(struct modelerr_data));
+
+	assert(K <= cfimg_dims[COEFF_DIM]);
+	data->K = K;
+
+	md_copy_dims(DIMS, data->cfimg_dims, cfimg_dims);
+
+	return linop_create(DIMS, cfimg_dims, DIMS, cfimg_dims, data, modelerr_apply, modelerr_apply, modelerr_apply, NULL, modelerr_free);
+
+}
 
 
 float jt_estimate_scaling(const long dims[DIMS], const _Complex float* sens, const _Complex float* data)
@@ -721,7 +767,9 @@ void jtsense_recon(struct jtsense_conf* conf,
 		const long pat_dims[DIMS], const _Complex float* pattern,
 		const long basis_dims[DIMS], const _Complex float* basis,
 		const long odict_dims[DIMS], const _Complex float* odict, 
-		const _Complex float* x_truth)
+		const _Complex float* x_truth,
+		bool use_cfksp,
+		const long phase_dims[DIMS], const _Complex float* phase_ref)
 {
 
 #ifdef USE_CUDA
@@ -774,7 +822,7 @@ void jtsense_recon(struct jtsense_conf* conf,
 	if (use_odict)
 		md_select_dims(DIMS, ~(COIL_FLAG | TE_FLAG | COEFF_FLAG), data->bfimg_dims, max_dims_crop);
 
-	debug_printf(DP_DEBUG2, "img_dims =\t");
+	debug_printf(DP_DEBUG3, "img_dims =\t");
 	debug_print_dims(DP_DEBUG3, DIMS, data->img_dims);
 	debug_printf(DP_DEBUG3, "cfimg_dims =\t");
 	debug_print_dims(DP_DEBUG3, DIMS, data->cfimg_dims);
@@ -790,8 +838,8 @@ void jtsense_recon(struct jtsense_conf* conf,
 	else
 		md_copy_dims(DIMS, data->x_dims, data->cfimg_dims);
 
-	debug_printf(DP_DEBUG2, "x_dims =\t");
-	debug_print_dims(DP_DEBUG2, DIMS, data->x_dims);
+	debug_printf(DP_DEBUG3, "x_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, data->x_dims);
 
 	long img_full_dims[DIMS];
 	md_select_dims(DIMS, ~(FFT_FLAGS), img_full_dims, data->img_dims);
@@ -803,73 +851,6 @@ void jtsense_recon(struct jtsense_conf* conf,
 
 	//size_t x_size = md_calc_size(DIMS, data->x_dims);
 
-#ifndef COMMUTE
-
-	// -----------------------------------------------------------
-	// sense operator: P F S M R -- sampling, F.T., maps, pfov mask, real value constraint
-
-	long max_dims_sens[DIMS];
-	md_select_dims(DIMS, (FFT_FLAGS | SENS_FLAGS | TE_FLAG), max_dims_sens, max_dims);
-
-	struct linop_s* sense_op = sense_init(max_dims_sens, (FFT_FLAGS | SENS_FLAGS), maps, use_gpu);
-
-	if (data->conf->crop) {
-
-		struct linop_s* pfov_op = linop_resize_create(DIMS, img_full_dims, data->img_dims);
-		struct linop_s* tmp_op = linop_chain(pfov_op, sense_op);
-
-		linop_free(pfov_op);
-		linop_free(sense_op);
-
-		sense_op = tmp_op;
-	}
-
-	struct linop_s* rvc_op = NULL;
-	if (data->conf->sconf.rvc) {
-
-		rvc_op = rvc_create(DIMS, data->x_dims);
-		struct linop_s* tmp_op = linop_chain(rvc_op, sense_op);
-
-		linop_free(sense_op);
-		sense_op = tmp_op;
-	}
-
-	const struct linop_s* sample_op = sampling_create(max_dims_sens, pat_dims, pattern);
-	const struct linop_s* tmp_op = linop_chain(sense_op, sample_op);
-	linop_free(sense_op);
-	linop_free(sample_op);
-
-	data->sense_op = tmp_op;
-
-
-	// -----------------------------------------------------------
-	// temporal and overcomplete dictionary ops
-	
-#if 0
-	long fake_bas_dims[DIMS];
-	md_select_dims(DIMS, ~(COEFF_FLAG), fake_bas_dims, basis_dims);
-	fake_bas_dims[COEFF_DIM] = conf->K;
-#endif
-
-	if (NULL != basis)
-		data->temporal_op = linop_matrix_altcreate(DIMS, data->img_dims, data->cfimg_dims, TE_DIM, COEFF_DIM, basis);
-	else
-		data->temporal_op = NULL;
-
-	if (use_odict)
-		data->odict_op = linop_matrix_altcreate(DIMS, data->cfimg_dims, data->bfimg_dims, COEFF_DIM, COEFF2_DIM, odict);
-	else
-		data->odict_op = NULL;
-
-	// combine both if possible
-	const struct linop_s* transform_op = NULL;
-
-	if ( NULL != data->temporal_op && NULL != data->odict_op )
-		transform_op = linop_matrix_chain(data->odict_op, data->temporal_op);
-	else
-		transform_op = data->temporal_op;
-
-#else
 
 	// -----------------------------------------------------------
 	// sense operator: F S M R -- F.T., maps, pfov mask, real value constraint
@@ -893,21 +874,55 @@ void jtsense_recon(struct jtsense_conf* conf,
 	struct linop_s* rvc_op = NULL;
 	if (data->conf->sconf.rvc) {
 
+#if 0
 		rvc_op = rvc_create(DIMS, data->x_dims);
 		struct linop_s* tmp_op = linop_chain(rvc_op, sense_op);
+#else
+		long rvc_dims[DIMS];
+		md_select_dims(DIMS, ~MAPS_FLAG, rvc_dims, max_dims_sens);
+		rvc_op = rvc_create(DIMS, rvc_dims);
+		struct linop_s* tmp_op = linop_chain(sense_op, rvc_op);
+#endif
 
 		linop_free(sense_op);
 		sense_op = tmp_op;
 	}
 
-#ifdef CFKSP
-	const struct linop_s* sample_op = NULL;
-#else
-	long max_dims_pat[DIMS];
-	md_select_dims(DIMS, (FFT_FLAGS | SENS_FLAGS | TE_FLAG), max_dims_pat, max_dims);
 
-	const struct linop_s* sample_op = sampling_create(max_dims_pat, pat_dims, pattern);
+	struct linop_s* phase_op = NULL;
+	if (NULL != phase_ref) {
+
+		unsigned int phase_flags = 0;
+
+		for (unsigned int i = 0; i < DIMS; i++) {
+
+			if (phase_dims[i] > 1)
+				phase_flags = MD_SET(phase_flags, i);
+		}
+
+#if 0
+		phase_op = linop_cdiag_create(DIMS, data->x_dims, phase_flags, phase_ref); 
+		struct linop_s* tmp_op = linop_chain(phase_op, sense_op);
+#else
+		long max_dims_phs_sens[DIMS];
+		md_select_dims(DIMS, ~MAPS_FLAG, max_dims_phs_sens, max_dims_sens);
+		phase_op = linop_cdiag_create(DIMS, max_dims_phs_sens, phase_flags, phase_ref); 
+		struct linop_s* tmp_op = linop_chain(sense_op, phase_op);
 #endif
+
+		linop_free(sense_op);
+		sense_op = tmp_op;
+	}
+
+
+	const struct linop_s* sample_op = NULL;
+	long max_dims_pat[DIMS];
+
+	if (!use_cfksp) {
+
+		md_select_dims(DIMS, (FFT_FLAGS | SENS_FLAGS | TE_FLAG), max_dims_pat, max_dims);
+		sample_op = sampling_create(max_dims_pat, pat_dims, pattern);
+	}
 
 	//const struct linop_s* tmp_op = linop_chain(sense_op, sample_op);
 	//linop_free(sense_op);
@@ -919,7 +934,6 @@ void jtsense_recon(struct jtsense_conf* conf,
 	// -----------------------------------------------------------
 	// temporal and overcomplete dictionary ops
 	
-
 	long phi_dims[DIMS];
 
 	md_select_dims(DIMS, TE_FLAG, phi_dims, basis_dims);
@@ -946,16 +960,13 @@ void jtsense_recon(struct jtsense_conf* conf,
 
 	const struct linop_s* transform_op = data->odict_op;
 
-#ifdef CFKSP
 	struct linop_s* ktemporal_op = NULL;
-#else
-	struct linop_s* ktemporal_op = linop_matrix_altcreate(DIMS, data->ksp_dims, cfksp_dims, TE_DIM, COEFF_DIM, basis);
-#endif
+	if (!use_cfksp)
+		ktemporal_op = linop_matrix_altcreate(DIMS, data->ksp_dims, cfksp_dims, TE_DIM, COEFF_DIM, basis);
 
-	data->jtsense_op = jtmodel_init(max_dims, sense_op, ktemporal_op, sample_op, pat_dims, pattern, phi_dims, phi);
+	data->jtsense_op = jtmodel_init(max_dims, sense_op, ktemporal_op, sample_op, pat_dims, pattern, phi_dims, phi, use_cfksp);
 	md_free(phi);
 
-#endif
 
 	// -----------------------------------------------------------
 	// initialize coefficient images
@@ -1197,11 +1208,42 @@ void jtsense_recon(struct jtsense_conf* conf,
 			//l1_linop = eye;
 		}
 	}
+	else {
+		UNUSED(tz_op);
+	}
 
 
 	// -----------------------------------------------------------
+	// model error operator
+
+	const struct linop_s* modelerr_linop = NULL;
+	const struct operator_p_s* l2ball_op = NULL;
+	if (data->conf->modelerr > 0.) {
+
+		modelerr_linop = modelerr_linop_create(data->cfimg_dims, data->conf->Kmodelerr);
+		l2ball_op = prox_l2ball_create(DIMS, data->cfimg_dims, data->conf->modelerr, NULL);
+	}
+
+
+	// -----------------------------------------------------------
+	// positivity constraint
+	const struct linop_s* pos_linop = NULL;
+	const struct operator_p_s* pos_op = NULL;
+	const struct operator_p_s* rvc_pop = NULL;
+	if (data->conf->positive) {
+
+		if (use_odict)
+			error("TODO: implement for odict");
+
+		pos_op = prox_greq_create(DIMS, data->img_dims, NULL);
+		pos_linop = data->temporal_op;
+
+		rvc_pop = prox_rvc_create(DIMS, data->x_dims);
+	}
+
+	// -----------------------------------------------------------
 	// set up iterative algorithm interface
-	
+
 #if 0
 	bool regs[4] = { data->conf->use_l1wav, data->conf->use_llr, (use_odict && data->conf->lambda_odict > 0.), true };
 	const struct operator_p_s* admm_funs[4] = { data->l1wavthresh_op, data->lrthresh_op, data->l1thresh_op, data->l2mean_op };
@@ -1219,17 +1261,17 @@ void jtsense_recon(struct jtsense_conf* conf,
 	UNUSED(l2z_linop);
 	UNUSED(l2mean_norm);
 
-	bool regs[4] = { data->conf->use_l1wav, data->conf->use_llr, (use_odict && data->conf->lambda_odict > 0.), data->conf->use_tv };
-	const struct operator_p_s* admm_funs[4] = { data->l1wavthresh_op, data->lrthresh_op, data->l1thresh_op, data->tvthresh_op };
-	const struct linop_s* admm_linops[4] = { l1wav_linop, llr_linop, l1_linop, tv_linop };
-	const obj_fun_t obj_funs[4] = { wavelet_l1norm, llr_nucnorm, odict_l1norm, NULL };
+	bool regs[7] = { data->conf->use_l1wav, data->conf->use_llr, (use_odict && data->conf->lambda_odict > 0.), data->conf->use_tv, data->conf->modelerr > 0., data->conf->positive, false };
+	const struct operator_p_s* admm_funs[7] = { data->l1wavthresh_op, data->lrthresh_op, data->l1thresh_op, data->tvthresh_op, l2ball_op, pos_op, rvc_pop };
+	const struct linop_s* admm_linops[7] = { l1wav_linop, llr_linop, l1_linop, tv_linop, modelerr_linop, pos_linop, eye };
+	const obj_fun_t obj_funs[7] = { wavelet_l1norm, llr_nucnorm, odict_l1norm, NULL, NULL, NULL, NULL };
 
 	unsigned int num_funs = 0;
-	const struct operator_p_s* prox_ops[4];
-	const struct linop_s* linops[4];
-	obj_fun_t obj_funs2[4];
+	const struct operator_p_s* prox_ops[7];
+	const struct linop_s* linops[7];
+	obj_fun_t obj_funs2[7];
 
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < 7; i++) {
 #endif
 
 		if (regs[i]) {
@@ -1238,7 +1280,7 @@ void jtsense_recon(struct jtsense_conf* conf,
 			linops[num_funs] = admm_linops[i];
 			obj_funs2[num_funs] = obj_funs[i];
 
-			debug_printf(DP_DEBUG1, "using function %d\n", i);
+			debug_printf(DP_DEBUG3, "using function %d\n", i);
 			//debug_print_iovec(DP_DEBUG3, linop_domain(linops[num_funs]));
 			//debug_print_iovec(DP_DEBUG3, linop_codomain(linops[num_funs]));
 
@@ -1261,30 +1303,23 @@ void jtsense_recon(struct jtsense_conf* conf,
 	// -----------------------------------------------------------
 	// perform recon
 	
+#if 0
 	if (data->conf->zmean) {
-#ifdef COMMUTE
-		assert(0);
-#else
 		jtsense_recon2(conf, x, italgo, iconf, data->sense_op, tz_op, num_funs, prox_ops2, linops2, obj_funs2, kspace, x_truth);
-#endif
 		md_copy(DIMS, data->cfimg_dims, cfimg, x, CFL_SIZE);
 		dump_cfl("x_raw", linop_domain(tz_op)->N, linop_domain(tz_op)->dims, x); 
 		linop_forward_unchecked(tz_op, img, x);
 	}
-	else {
-#ifdef COMMUTE
-		jtsense_recon2(conf, x_img, italgo, iconf, data->jtsense_op, transform_op, num_funs, prox_ops2, linops2, obj_funs2, kspace, x_truth);
-#else
-		jtsense_recon2(conf, x_img, italgo, iconf, data->sense_op, transform_op, num_funs, prox_ops2, linops2, obj_funs2, kspace, x_truth);
+	else
 #endif
+		jtsense_recon2(conf, x_img, italgo, iconf, data->jtsense_op, transform_op, num_funs, prox_ops2, linops2, obj_funs2, kspace, x_truth);
 
-		// project back onto time series
-		if (use_odict)
-			linop_forward_unchecked(data->odict_op, cfimg, bfimg);
+	// project back onto time series
+	if (use_odict)
+		linop_forward_unchecked(data->odict_op, cfimg, bfimg);
 
-		if (save_img) {
-			linop_forward_unchecked(data->temporal_op, img, cfimg);
-		}
+	if (save_img) {
+		linop_forward_unchecked(data->temporal_op, img, cfimg);
 	}
 
 
@@ -1300,10 +1335,15 @@ void jtsense_recon(struct jtsense_conf* conf,
 	if (NULL != data->odict_op && NULL != data->temporal_op) {
 		linop_free(data->temporal_op);
 		linop_free(data->odict_op);
-		linop_free(transform_op);
+
 	}
 	else
 		linop_free(data->temporal_op);
+
+	if (data->conf->modelerr > 0.) {
+		linop_free(modelerr_linop);
+		operator_p_free(l2ball_op);
+	}
 
 	if (data->conf->zmean)
 		linop_free(tz_op);
@@ -1311,16 +1351,13 @@ void jtsense_recon(struct jtsense_conf* conf,
 	if (data->conf->sconf.rvc)
 		linop_free(rvc_op);
 
-#ifdef COMMUTE
 	linop_free(data->jtsense_op);
 	linop_free(sense_op);
-#ifndef CFKSP
-	linop_free(sample_op);
-	linop_free(ktemporal_op);
-#endif
-#else
-	linop_free(data->sense_op);
-#endif
+
+	if (!use_cfksp) {
+		linop_free(sample_op);
+		linop_free(ktemporal_op);
+	}
 
 	linop_free(eye);
 
@@ -1340,6 +1377,11 @@ void jtsense_recon(struct jtsense_conf* conf,
 	if (use_odict && data->conf->lambda_odict > 0.)
 		operator_p_free(data->l1thresh_op);
 
+	if(data->conf->positive) {
+		operator_p_free(pos_op);
+		operator_p_free(rvc_pop);
+	}
+
 }
 
 
@@ -1352,7 +1394,9 @@ void jtsense_recon_gpu(struct jtsense_conf* conf,
 		const long pat_dims[DIMS], const _Complex float* pattern,
 		const long basis_dims[DIMS], const _Complex float* basis,
 		const long odict_dims[DIMS], const _Complex float* odict, 
-		const _Complex float* x_truth)
+		const _Complex float* x_truth,
+		bool use_cfksp,
+		const long phase_dims[DIMS], const _Complex float* phase_ref)
 {
 
 	// -----------------------------------------------------------
@@ -1376,11 +1420,11 @@ void jtsense_recon_gpu(struct jtsense_conf* conf,
 	md_copy_dims(DIMS, max_dims_crop, max_dims);
 	md_min_dims(DIMS, FFT_FLAGS, max_dims_crop, max_dims, crop_dims);
 
-#ifdef CFKSP
-	md_select_dims(DIMS, ~(MAPS_FLAG | TE_FLAG | COEFF2_FLAG), ksp_dims, max_dims);
-#else
-	md_select_dims(DIMS, ~(MAPS_FLAG | COEFF_FLAG | COEFF2_FLAG), ksp_dims, max_dims);
-#endif
+	if (use_cfksp)
+		md_select_dims(DIMS, ~(MAPS_FLAG | TE_FLAG | COEFF2_FLAG), ksp_dims, max_dims);
+	else
+		md_select_dims(DIMS, ~(MAPS_FLAG | COEFF_FLAG | COEFF2_FLAG), ksp_dims, max_dims);
+
 	md_select_dims(DIMS, ~(COIL_FLAG | COEFF_FLAG | COEFF2_FLAG), img_dims, max_dims_crop);
 	md_select_dims(DIMS, ~(COIL_FLAG | TE_FLAG | COEFF2_FLAG), cfimg_dims, max_dims_crop);
 
@@ -1407,11 +1451,13 @@ void jtsense_recon_gpu(struct jtsense_conf* conf,
 
 	complex float* gpu_x_truth = md_gpu_move(DIMS, x_dims, x_truth, CFL_SIZE);
 
+	complex float* gpu_pref = md_gpu_move(DIMS, phase_dims, phase_ref, CFL_SIZE);
+
 
 	// -----------------------------------------------------------
 	// run recon
 
-	jtsense_recon(conf, italgo, iconf, gpu_img, gpu_cfimg, gpu_bfimg, gpu_ksp, crop_dims, map_dims, gpu_maps, pat_dims, gpu_pat, basis_dims, gpu_basis, odict_dims, gpu_odict, gpu_x_truth);
+	jtsense_recon(conf, italgo, iconf, gpu_img, gpu_cfimg, gpu_bfimg, gpu_ksp, crop_dims, map_dims, gpu_maps, pat_dims, gpu_pat, basis_dims, gpu_basis, odict_dims, gpu_odict, gpu_x_truth, use_cfksp, phase_dims, gpu_pref);
 
 	if (NULL != img)
 		md_copy(DIMS, img_dims, img, gpu_img, CFL_SIZE);
@@ -1438,6 +1484,8 @@ void jtsense_recon_gpu(struct jtsense_conf* conf,
 	md_free((void*)gpu_odict);
 
 	md_free((void*)gpu_x_truth);
+
+	md_free(gpu_pref);
 }
 #endif
 

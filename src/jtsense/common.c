@@ -29,10 +29,10 @@
 extern void jtsense_usage(const char* name, FILE* fd)
 {
 	fprintf(fd, "Usage 1: %s [options] <te_kspace> <sensitivities> <basis> <output>\n", name);
-	fprintf(fd, "\t<te_kspace> dimensions are [X Y Z ncoils nmaps TEs]\n");
+	fprintf(fd, "\t<te_kspace> dimensions are [X Y Z ncoils 1 TEs]\n");
 	fprintf(fd, "\n");
 	fprintf(fd, "Usage 2: %s [options] <kspace> <te_mask> <sensitivities> <basis> <output>\n", name);
-	fprintf(fd, "\t<kspace> dimensions are  [X Y Z ncoils nmaps]\n");
+	fprintf(fd, "\t<kspace> dimensions are  [X Y Z ncoils 1]\n");
 	fprintf(fd, "\t<te_mask> dimensions are [X Y Z 1 1 TEs]\n");
 	fprintf(fd, "\n");
 	fprintf(fd, "Usage determined by number of arguments following options.\n");
@@ -286,26 +286,120 @@ void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dim
 				view_pos[2] = 1;
 				view_idx = md_calc_offset(3, view_strs, view_pos);
 
-				dat_pos[PHS2_DIM] = dab_views[view_idx / sizeof(long)];
-				ksp_pos[PHS2_DIM] = ksp_views[view_idx / sizeof(long)];
+				if (dab_views[view_idx / sizeof(long)] >= 0 && ksp_views[view_idx / sizeof(long)]  >= 0) {
 
-				ksp_pos[TE_DIM] = echo;
+					dat_pos[PHS2_DIM] = dab_views[view_idx / sizeof(long)];
+					ksp_pos[PHS2_DIM] = ksp_views[view_idx / sizeof(long)];
 
-				if (skips_start == 1 && echo != 0)
-					ksp_pos[TE_DIM]--;
+					ksp_pos[TE_DIM] = echo;
 
-				long copy_dims[D];
+					if (skips_start == 1 && echo != 0)
+						ksp_pos[TE_DIM]--;
 
-				md_select_dims(D, READ_FLAG | COIL_FLAG, copy_dims, ksp_dims);
+					long copy_dims[D];
 
-				long ksp_idx = md_calc_offset(D, ksp_strs, ksp_pos);
-				long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
+					md_select_dims(D, READ_FLAG | COIL_FLAG, copy_dims, ksp_dims);
 
-				md_copy2(D, copy_dims, ksp_strs, ksp + ksp_idx / sizeof(long), dat_strs, data + dat_idx / sizeof(long), CFL_SIZE);
+					long ksp_idx = md_calc_offset(D, ksp_strs, ksp_pos);
+					long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
+
+					md_copy2(D, copy_dims, ksp_strs, ksp + ksp_idx / sizeof(long), dat_strs, data + dat_idx / sizeof(long), CFL_SIZE);
+				}
 			}
 		}
 	}
 }
+
+
+void dat_from_views(unsigned int D, const long dat_dims[D], complex float* dat, const long ksp_dims[D], const complex float* ksp, long view_dims[3], const long* ksp_views, const long* dab_views)
+{
+
+	assert(view_dims[2] == 2);
+
+	long ksp_strs[D];
+	long dat_strs[D];
+	long view_strs[3];
+
+	long ksp_pos[D];
+	long dat_pos[D];
+	long view_pos[3];
+
+	md_calc_strides(D, ksp_strs, ksp_dims, CFL_SIZE);
+	md_calc_strides(D, dat_strs, dat_dims, CFL_SIZE);
+	md_calc_strides(3, view_strs, view_dims, sizeof(long));
+
+	md_set_dims(D, ksp_pos, 0);
+	md_set_dims(D, dat_pos, 0);
+	md_set_dims(3, view_pos, 0);
+
+	long N = view_dims[0];
+	long T = ksp_dims[TE_DIM];
+
+	md_clear(D, dat_dims, dat, CFL_SIZE);
+
+
+	for (long train = 0; train < N; train++) {
+
+		for (long echo = 0; echo < T; echo++) {
+
+			view_pos[0] = train;
+			view_pos[1] = echo;
+
+			view_pos[2] = 0;
+			long view_idx = md_calc_offset(3, view_strs, view_pos);
+
+			if (dab_views[view_idx / sizeof(long)] >= 0 && ksp_views[view_idx / sizeof(long)]  >= 0) {
+
+				dat_pos[PHS1_DIM] = dab_views[view_idx / sizeof(long)];
+				ksp_pos[PHS1_DIM] = ksp_views[view_idx / sizeof(long)];
+
+				view_pos[2] = 1;
+				view_idx = md_calc_offset(3, view_strs, view_pos);
+
+				if (dab_views[view_idx / sizeof(long)] >= 0 && ksp_views[view_idx / sizeof(long)]  >= 0) {
+
+					dat_pos[PHS2_DIM] = dab_views[view_idx / sizeof(long)];
+					ksp_pos[PHS2_DIM] = ksp_views[view_idx / sizeof(long)];
+
+					ksp_pos[TE_DIM] = echo;
+
+					long copy_dims[D];
+
+					md_select_dims(D, READ_FLAG | COIL_FLAG, copy_dims, ksp_dims);
+
+					long ksp_idx = md_calc_offset(D, ksp_strs, ksp_pos);
+					long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
+
+					md_copy2(D, copy_dims, dat_strs, dat + dat_idx / sizeof(long), ksp_strs, ksp + ksp_idx / sizeof(long), CFL_SIZE);
+				}
+			}
+		}
+	}
+}
+
+
+/**
+ * ksp_dims: [1 Y Z C 1 T]
+ * dat_dims: [1 Y Z C 1 1]
+ */
+int dat_from_view_files(unsigned int D, const long dat_dims[D], complex float* dat, const long ksp_dims[D], const complex float* ksp, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file)
+{
+	long view_dims[3] = { Nmax, Tmax, 2 };
+	long* ksp_views = md_alloc(3, view_dims, sizeof(long));
+	long* dab_views = md_alloc(3, view_dims, sizeof(long));
+
+	if (0 != vieworder_preprocess(ksp_views_file, header, 0, view_dims, ksp_views))
+		return -1;
+
+	if (0 != vieworder_preprocess(dab_views_file, header, 0, view_dims, dab_views))
+		return -1;
+
+	dat_from_views(D, dat_dims, dat, ksp_dims, ksp, view_dims, ksp_views, dab_views);
+
+	return 0;
+
+}
+
 
 /**
  * ksp_dims: [1 Y Z C 1 T]

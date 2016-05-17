@@ -17,7 +17,8 @@ struct linop_s;
 struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const struct linop_s* sense_op, const struct linop_s* temporal_op, const struct linop_s* sample_op,
 		const long pat_dims[DIMS], const _Complex float* pattern,
-		const long bas_dis[DIMS], const _Complex float* basis);
+		const long bas_dims[DIMS], const _Complex float* basis,
+		_Bool use_cfksp);
 
 
 #ifdef __cplusplus

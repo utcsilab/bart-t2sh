@@ -46,6 +46,10 @@ extern int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], _Comp
 
 extern int cfksp_pat_from_view_files(unsigned int D, const long cfksp_dims[D], _Complex float* cfksp, const long pat_dims[D], _Complex float* pattern, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, unsigned int K, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file);
 
+extern void dat_from_views(unsigned int D, const long dat_dims[D], _Complex float* dat, const long ksp_dims[D], const _Complex float* ksp, long view_dims[3], const long* ksp_views, const long* dab_views);
+
+extern int dat_from_view_files(unsigned int D, const long dat_dims[D], _Complex float* dat, const long ksp_dims[D], const _Complex float* ksp, _Bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file);
+
 #ifdef __cplusplus
 }
 #endif

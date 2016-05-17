@@ -36,7 +36,7 @@ static const char* help_str = "Reorder data according to vieworder files and out
 
 
 
-int main_te_prep(int argc, char* argv[])
+int main_t2sh_prep(int argc, char* argv[])
 {
 	double start_time = timestamp();
 

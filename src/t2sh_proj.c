@@ -40,7 +40,7 @@ static void help(const char* name, FILE *fd)
 		"\t-h\thelp\n");
 }
 
-int main_te_proj(int argc, char* argv[])
+int main_t2sh_proj(int argc, char* argv[])
 {
 	bool forward = false;
 	bool zmean = false;

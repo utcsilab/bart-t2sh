@@ -89,7 +89,7 @@ static int read_vieworder_file(char* filename, _Bool skip, unsigned int D, long 
 	return 0;
 }
 
-int main_te_mask(int argc, char* argv[])
+int main_t2sh_mask(int argc, char* argv[])
 {
 	int c;
 	_Bool skip = false;

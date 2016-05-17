@@ -286,6 +286,7 @@ CPPFLAGS += -DUSE_ACML
 else
 BLAS_H := -I$(BLAS_BASE)/include
 ifeq ($(BUILDTYPE), MacOSX)
+BLAS_H := -I$(BLAS_BASE)/include
 BLAS_L := -L$(BLAS_BASE)/lib -lopenblas
 else
 ifeq ($(NOLAPACKE),1)

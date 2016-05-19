@@ -298,7 +298,7 @@ void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dim
 
 					long copy_dims[D];
 
-					md_select_dims(D, READ_FLAG | COIL_FLAG, copy_dims, ksp_dims);
+					md_select_dims(D, ~(PHS1_FLAG | PHS2_FLAG | TE_FLAG), copy_dims, ksp_dims);
 
 					long ksp_idx = md_calc_offset(D, ksp_strs, ksp_pos);
 					long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
@@ -365,7 +365,7 @@ void dat_from_views(unsigned int D, const long dat_dims[D], complex float* dat, 
 
 					long copy_dims[D];
 
-					md_select_dims(D, READ_FLAG | COIL_FLAG, copy_dims, ksp_dims);
+					md_select_dims(D, (PHS1_FLAG | PHS2_FLAG | TE_FLAG), copy_dims, ksp_dims);
 
 					long ksp_idx = md_calc_offset(D, ksp_strs, ksp_pos);
 					long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
@@ -670,7 +670,7 @@ void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp
 
 				long copy_dims[D];
 
-				md_select_dims(D, READ_FLAG | COIL_FLAG | COEFF_FLAG, copy_dims, cfksp_dims);
+				md_select_dims(D, ~(PHS1_FLAG | PHS2_FLAG | TE_FLAG), copy_dims, cfksp_dims);
 
 				long cfksp_idx = md_calc_offset(D, cfksp_strs, cfksp_pos);
 				long dat_idx = md_calc_offset(D, dat_strs, dat_pos);

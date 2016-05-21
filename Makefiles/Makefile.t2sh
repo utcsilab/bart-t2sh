@@ -1,0 +1,9 @@
+# BART Makefile for T2 Shuffling recon
+
+# Additional targets
+TOPT= t2sh_pics t2sh_proj t2sh_mask t2sh_prep
+MODULES_t2sh_prep = -ljtsense -lsense -liter -llinops
+MODULES_t2sh_pics = -lgrecon -ljtsense -lsense -lwavelet2 -llowrank -liter -llinops
+MODULES_bart += -ljtsense
+
+XTARGETS += $(TOPT)

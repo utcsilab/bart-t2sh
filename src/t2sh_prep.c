@@ -1,5 +1,10 @@
-/*
- * 2014	Jonathan Tamir <jtamir@eecs.berkeley.edu>
+/* Copyright 2014-2016. The Regents of the University of California.
+ * All rights reserved. Use of this source code is governed by
+ * a BSD-style license which can be found in the LICENSE file.
+ *
+ * Authors:
+ * 2013-2016 Jonathan Tamir <jtamir@eecs.berkeley.edu>
+ *
  */
 
 #define _GNU_SOURCE
@@ -16,7 +21,7 @@
 #include "num/fft.h"
 #include "num/init.h"
 
-#include "jtsense/common.h"
+#include "jtsense/jtrecon.h"
 
 #include "misc/mri.h"
 #include "misc/mmio.h"
@@ -26,7 +31,7 @@
 
 
 #ifndef DIMS
-#define DIMS KSPACE_DIMS
+#define DIMS 16
 #endif
 
 

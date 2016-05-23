@@ -156,32 +156,25 @@ static void stkern_del(const void* _data)
 
 static const struct operator_s* stkern_init(const long pat_dims[DIMS], const complex float* pattern,
 		const long bas_dims[DIMS], const complex float* basis,
-		long stkern_dims[DIMS], long cfksp_dims[DIMS])
+		long stkern_dims[DIMS], long cfksp_dims[DIMS],
+		bool use_gpu)
 {
 
 
 	struct stkern_data* data = xmalloc(sizeof(struct stkern_data));
 
-#if 0
 	// FIXME this is very very slow on GPU
-	complex float* stkern_mat = md_alloc_sameplace(DIMS, stkern_dims, CFL_SIZE, basis);
+	complex float* stkern_mat = md_alloc(DIMS, stkern_dims, CFL_SIZE);
 	create_stkern_mat(stkern_mat, pat_dims, pattern, bas_dims, basis);
-#else
-	// FIXME only do this if running on GPU
-	complex float* stkern_mat = md_alloc_sameplace(DIMS, stkern_dims, CFL_SIZE, basis);
-	complex float* stkern_mat_cpu = md_alloc(DIMS, stkern_dims, CFL_SIZE);
-	complex float* bas_cpu = md_alloc(DIMS, bas_dims, CFL_SIZE);
-	complex float* pat_cpu = md_alloc(DIMS, pat_dims, CFL_SIZE);
 
-	md_copy(DIMS, bas_dims, bas_cpu, basis, CFL_SIZE);
-	md_copy(DIMS, pat_dims, pat_cpu, pattern, CFL_SIZE);
+#ifdef USE_CUDA
+	complex float* gpu_stkern_mat = NULL;
+	if (use_gpu) {
 
-	create_stkern_mat(stkern_mat_cpu, pat_dims, pat_cpu, bas_dims, bas_cpu);
-	md_copy(DIMS, stkern_dims, stkern_mat, stkern_mat_cpu, CFL_SIZE);
-
-	md_free(stkern_mat_cpu);
-	md_free(bas_cpu);
-	md_free(pat_cpu);
+		gpu_stkern_mat = md_gpu_move(DIMS, stkern_dims, stkern_mat, CFL_SIZE);
+		md_free(stkern_mat);
+		stkern_mat = gpu_stkern_mat;
+	}
 #endif
 
 	data->stkern_mat = stkern_mat;
@@ -254,7 +247,8 @@ static void jtmodel_del(const void* _data)
 struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const struct linop_s* sense_op,
 		const long pat_dims[DIMS], const complex float* pattern,
-		const long bas_dims[DIMS], const complex float* basis)
+		const long bas_dims[DIMS], const complex float* basis,
+		bool use_gpu)
 {
 
 	struct jtmodel_data* data = xmalloc(sizeof(struct jtmodel_data));
@@ -263,13 +257,18 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 
 	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG), data->cfksp_dims, max_dims);
 
-	data->cfksp = md_alloc_sameplace(DIMS, data->cfksp_dims, CFL_SIZE, basis);
+#ifdef USE_CUDA
+	data->cfksp = (use_gpu ? md_alloc_gpu : md_alloc)(DIMS, data->cfksp_dims, CFL_SIZE);
+#else
+	assert(!use_gpu);
+	data->cfksp = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
+#endif
 
 	long stkern_dims[DIMS];
 	md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG | COEFF_FLAG), stkern_dims, max_dims);
 	stkern_dims[TE_DIM] = stkern_dims[COEFF_DIM];
 
-	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims);
+	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims, use_gpu);
 	data->stkern_op = stkern_op;
 
 	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, data, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);

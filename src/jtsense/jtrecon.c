@@ -205,7 +205,7 @@ void jtsense_recon_gpu(const struct jtsense_conf* conf, complex float* cfimg,
 	long cfimg_dims[DIMS];
 
 	md_copy_dims(DIMS, cfksp_dims, linop_codomain(E_op)->dims);
-	md_copy_dims(DIMS, cfimg, linop_domain(E_op)->dims);
+	md_copy_dims(DIMS, cfimg_dims, linop_domain(E_op)->dims);
 
 
 	// -----------------------------------------------------------

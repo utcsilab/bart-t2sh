@@ -17,7 +17,8 @@ struct linop_s;
 struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const struct linop_s* sense_op,
 		const long pat_dims[DIMS], const _Complex float* pattern,
-		const long bas_dims[DIMS], const _Complex float* basis);
+		const long bas_dims[DIMS], const _Complex float* basis,
+		bool use_gpu);
 
 
 #ifdef __cplusplus

@@ -322,7 +322,7 @@ int main_t2sh_pics(int argc, char* argv[])
 		sense_op = tmp_op;
 	}
 
-	const struct linop_s* forward_op = jtmodel_init(max_dims, sense_op, pat_dims, pattern, basis_dims, basis);
+	const struct linop_s* forward_op = jtmodel_init(max_dims, sense_op, pat_dims, pattern, basis_dims, basis, use_gpu);
 
 
 	// -----------------------------------------------------------
@@ -439,7 +439,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 	if (use_gpu) 
 #ifdef USE_CUDA
-		jtsense_recon(&conf, cfimg, italgo, iconf, forward_op, nr_penalties, thresh_ops,
+		jtsense_recon_gpu(&conf, cfimg, italgo, iconf, forward_op, nr_penalties, thresh_ops,
 				(ADMM == algo) ? trafos : NULL, NULL, cfksp, cfimg_truth);
 #else
 	error("BART not compiled for GPU!\n");

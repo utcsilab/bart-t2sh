@@ -150,7 +150,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 	// -----------------------------------------------------------
 	// load data and get dimensions
-	
+
 	long max_dims[DIMS];
 	long cfksp_dims[DIMS];
 	long pat_dims[DIMS];
@@ -229,7 +229,7 @@ int main_t2sh_pics(int argc, char* argv[])
 	if (use_cfimg_truth) {
 
 		cfimg_truth = load_cfl(cfimg_truth_file, DIMS, cfimg_truth_dims);
-		
+
 		if (md_check_compat(DIMS, 0u, cfimg_dims, cfimg_truth_dims))
 			error("Truth image dimensions not compatible with output!\n");
 

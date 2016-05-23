@@ -85,7 +85,7 @@ float jt_estimate_scaling(const long cfksp_dims[DIMS], const complex float* sens
 
 	if (NULL == sens)
 		rss_combine(cfksp_dims, tmp, data);
-	 else
+	else
 		optimal_combine(cfksp_dims, 0., tmp, sens, data);
 
 	long img_dims[DIMS];
@@ -166,14 +166,14 @@ void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 
 	// -----------------------------------------------------------
 	// call iterative algorithm interface
-	
+
 	if (!conf->fast) {
 		float objval = jtsense_objective((void*)data, (const float*)cfimg);
 		debug_printf(DP_DEBUG2, "OBJVAL = %f\n", objval);
 	}
 
 	lsqr2(DIMS, &lsqr_conf, italgo, iconf, data->E_op, data->num_prox_funs, data->prox_funs, data->G_ops, linop_domain(data->E_op)->dims, cfimg, linop_codomain(data->E_op)->dims, cfksp, NULL, cfimg_truth, conf->fast ? NULL : data, conf->fast ? NULL : jtsense_objective);
-	
+
 
 	// -----------------------------------------------------------
 	// cleanup
@@ -200,7 +200,7 @@ void jtsense_recon_gpu(const struct jtsense_conf* conf, complex float* cfimg,
 
 	// -----------------------------------------------------------
 	// create dims arrays
-	
+
 	long cfksp_dims[DIMS];
 	long cfimg_dims[DIMS];
 
@@ -210,7 +210,7 @@ void jtsense_recon_gpu(const struct jtsense_conf* conf, complex float* cfimg,
 
 	// -----------------------------------------------------------
 	// allocate and copy gpu memory
-	
+
 	complex float* gpu_cfksp = md_gpu_move(DIMS, cfksp_dims, cfksp, CFL_SIZE);
 	complex float* gpu_cfimg = md_gpu_move(DIMS, cfimg_dims, cfimg, CFL_SIZE);
 	complex float* gpu_cfimg_truth = md_gpu_move(DIMS, cfimg_dims, cfimg_truth, CFL_SIZE);
@@ -678,7 +678,7 @@ int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex floa
  */
 void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp_dims[D], complex float* cfksp, const long dat_dims[D], const complex float* data, const long bas_dims[D], const complex float* bas, long view_dims[3], const long* ksp_views, const long* dab_views)
 {
-	
+
 #if 0
 	assert(view_dims[1] == ksp_dims[TE_DIM]);
 #endif
@@ -739,7 +739,7 @@ void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp
 
 				if (skips_start == 1 && echo != 0)
 					bas_pos[TE_DIM]--;
-		
+
 				dat_pos[PHS1_DIM] = dab_views[view_idx / sizeof(long)];
 				cfksp_pos[PHS1_DIM] = ksp_views[view_idx / sizeof(long)];
 

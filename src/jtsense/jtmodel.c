@@ -69,7 +69,7 @@ transpose 6 15 tmp4 tmp5
 
 	// -----------------------------------------------------------
 	// initialize dimensions and strides
-	
+
 	long max_dims[DIMS + 1];      // [X Y Z 1 1 T K 1 ... 1 1]
 	long trp_dims[DIMS + 1];      // [X Y Z 1 1 T 1 1 ... 1 K]
 	long tproj_dims[DIMS + 1];    // [X Y Z 1 1 1 K 1 ... 1 K] 
@@ -95,7 +95,7 @@ transpose 6 15 tmp4 tmp5
 
 	md_copy_dims(DIMS, fake_bas_dims, bas_dims);
 	fake_bas_dims[DIMS] = 1;
-	
+
 	md_calc_strides(DIMS, max_strs, max_dims, CFL_SIZE);
 	md_calc_strides(DIMS, bas_strs, bas_dims, CFL_SIZE);
 	md_calc_strides(DIMS, pat_strs, pat_dims, CFL_SIZE);

@@ -115,7 +115,7 @@ int main_t2sh_pics(int argc, char* argv[])
 		OPT_INT('g', &gpun, "gpun", "Use GPU device gpun"),
 		OPT_SELECT('I', enum algo_t, &ropts.algo, IST, "\tselect IST"),
 		OPT_UINT('b', &llr_blk, "blk", "Lowrank block size"),
-		OPT_SET('H', &hogwild, "(hogwild)"),
+		OPT_SET('H', &hogwild, "hogwild"),
 		OPT_SET('F', &conf.fast, "fast"),
 		OPT_STRING('T', &cfimg_truth_file, "file", "truth file"),
 		OPT_STRING('W', &cfimg_start_file, "<img>", "Warm start with <img>"),

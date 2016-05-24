@@ -41,28 +41,18 @@ extern float jt_estimate_scaling(const long dims[DIMS], const _Complex float* se
 
 struct linop_s;
 struct operator_p_s;
+struct operator_s;
 
-extern void jtsense_recon(const struct jtsense_conf* conf, _Complex float* cfimg,
+extern const struct operator_s* operator_t2sh_pics_create(struct jtsense_conf* conf,
 		italgo_fun2_t italgo, iter_conf* iconf,
 		const struct linop_s* E_op,
 		unsigned int num_prox_funs,
 		const struct operator_p_s* prox_funs[num_prox_funs],
 		const struct linop_s* G_ops[num_prox_funs],
 		const obj_fun_t obj_funs[num_prox_funs],
-		const _Complex float* cfksp,
-		const _Complex float* cfimg_truth);
+		const _Complex float* cfimg_truth,
+		_Bool use_gpu);
 
-#ifdef USE_CUDA
-extern void jtsense_recon_gpu(const struct jtsense_conf* conf, _Complex float* cfimg,
-		italgo_fun2_t italgo, iter_conf* iconf,
-		const struct linop_s* E_op,
-		unsigned int num_prox_funs,
-		const struct operator_p_s* prox_funs[num_prox_funs],
-		const struct linop_s* G_ops[num_prox_funs],
-		const obj_fun_t obj_funs[num_prox_funs],
-		const _Complex float* cfksp,
-		const _Complex float* cfimg_truth);
-#endif
 
 extern int vieworder_preprocess(const char* filename, _Bool header, unsigned int echoes2skip, long dims[3], long* views);
 

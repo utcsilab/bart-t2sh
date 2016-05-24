@@ -55,7 +55,6 @@ const struct jtsense_conf jtsense_defaults = {
 	.fast = false,
 };
 
-
 struct data {
 
 	const struct jtsense_conf* conf;
@@ -69,6 +68,111 @@ struct data {
 	const complex float* cfksp;
 };
 
+struct t2sh_data {
+
+	operator_data_t base;
+
+	const struct jtsense_conf* conf;
+
+	unsigned int num_prox_funs;
+	const struct operator_p_s** prox_funs;
+	const struct linop_s** G_ops;
+	const obj_fun_t* obj_funs;
+
+	iter_conf* iconf;
+	italgo_fun2_t italgo;
+
+	const struct linop_s* E_op;
+	const complex float* cfksp;
+
+	const complex float* cfimg_truth;
+
+	bool use_gpu;
+};
+
+
+static void jtsense_recon(const struct jtsense_conf* conf, _Complex float* cfimg,
+		italgo_fun2_t italgo, iter_conf* iconf,
+		const struct linop_s* E_op,
+		unsigned int num_prox_funs,
+		const struct operator_p_s* prox_funs[num_prox_funs],
+		const struct linop_s* G_ops[num_prox_funs],
+		const obj_fun_t obj_funs[num_prox_funs],
+		const _Complex float* cfksp,
+		const _Complex float* cfimg_truth);
+
+#ifdef USE_CUDA
+static void jtsense_recon_gpu(const struct jtsense_conf* conf, _Complex float* cfimg,
+		italgo_fun2_t italgo, iter_conf* iconf,
+		const struct linop_s* E_op,
+		unsigned int num_prox_funs,
+		const struct operator_p_s* prox_funs[num_prox_funs],
+		const struct linop_s* G_ops[num_prox_funs],
+		const obj_fun_t obj_funs[num_prox_funs],
+		const _Complex float* cfksp,
+		const _Complex float* cfimg_truth);
+#endif
+
+
+static void jtsense_del(const operator_data_t* _data)
+{
+	const struct t2sh_data* data = CONTAINER_OF(_data, const struct t2sh_data, base);
+	free((void*)data);
+}
+
+
+static void jtsense_apply(const operator_data_t* _data, unsigned int N, void* args[N])
+{
+	struct t2sh_data* data = CONTAINER_OF(_data, struct t2sh_data, base);
+
+	assert(2 == N);
+
+	complex float* cfimg = args[0]; // destination
+	const complex float* cfksp = args[1]; // source
+
+	if (data->use_gpu) 
+#ifdef USE_CUDA
+		jtsense_recon_gpu(data->conf, cfimg, data->italgo, data->iconf, data->E_op, data->num_prox_funs, data->prox_funs,
+				data->G_ops, NULL, cfksp, data->cfimg_truth);
+#else
+	error("BART not compiled for GPU!\n");
+#endif
+	else
+		jtsense_recon(data->conf, cfimg, data->italgo, data->iconf, data->E_op, data->num_prox_funs, data->prox_funs,
+				data->G_ops, NULL, cfksp, data->cfimg_truth);
+
+}
+
+const struct operator_s* operator_t2sh_pics_create(struct jtsense_conf* conf,
+		italgo_fun2_t italgo, iter_conf* iconf,
+		const struct linop_s* E_op,
+		unsigned int num_prox_funs,
+		const struct operator_p_s* prox_funs[num_prox_funs],
+		const struct linop_s* G_ops[num_prox_funs],
+		const obj_fun_t obj_funs[num_prox_funs],
+		const complex float* cfimg_truth,
+		bool use_gpu)
+{
+
+	// -----------------------------------------------------------
+	// initialize data: struct to hold all data and operators
+
+	PTR_ALLOC(struct t2sh_data, data);
+
+	data->conf = conf;
+	data->italgo = italgo;
+	data->iconf = iconf;
+	data->E_op = E_op;
+	data->num_prox_funs = num_prox_funs;
+	data->prox_funs = prox_funs;
+	data->G_ops = G_ops;
+	data->obj_funs = obj_funs;
+	data->cfimg_truth = cfimg_truth;
+	data->use_gpu = use_gpu;
+
+	return operator_create(linop_domain(E_op)->N, linop_domain(E_op)->dims, linop_domain(E_op)->N, linop_codomain(E_op)->dims, &data->base, jtsense_apply, jtsense_del);
+
+}
 
 
 float jt_estimate_scaling(const long cfksp_dims[DIMS], const complex float* sens, const complex float* data)
@@ -138,7 +242,7 @@ static float jtsense_objective(const void* _data, const float* _x)
 }
 
 
-void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
+static void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 		italgo_fun2_t italgo, iter_conf* iconf,
 		const struct linop_s* E_op,
 		unsigned int num_prox_funs,
@@ -154,7 +258,6 @@ void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 	struct data* data = xmalloc(sizeof(struct data));
 
 	data->conf = conf;
-	data->cfksp = cfksp;
 	data->E_op = E_op;
 	data->num_prox_funs = num_prox_funs;
 	data->prox_funs = prox_funs;
@@ -174,7 +277,6 @@ void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 
 	lsqr2(DIMS, &lsqr_conf, italgo, iconf, data->E_op, data->num_prox_funs, data->prox_funs, data->G_ops, linop_domain(data->E_op)->dims, cfimg, linop_codomain(data->E_op)->dims, cfksp, NULL, cfimg_truth, conf->fast ? NULL : data, conf->fast ? NULL : jtsense_objective);
 
-
 	// -----------------------------------------------------------
 	// cleanup
 
@@ -187,7 +289,7 @@ void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 
 
 #ifdef USE_CUDA
-void jtsense_recon_gpu(const struct jtsense_conf* conf, complex float* cfimg,
+static void jtsense_recon_gpu(const struct jtsense_conf* conf, complex float* cfimg,
 		italgo_fun2_t italgo, iter_conf* iconf,
 		const struct linop_s* E_op,
 		unsigned int num_prox_funs,

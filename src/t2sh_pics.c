@@ -437,16 +437,12 @@ int main_t2sh_pics(int argc, char* argv[])
 	}
 
 
-	if (use_gpu) 
-#ifdef USE_CUDA
-		jtsense_recon_gpu(&conf, cfimg, italgo, iconf, forward_op, nr_penalties, thresh_ops,
-				(ADMM == algo) ? trafos : NULL, NULL, cfksp, cfimg_truth);
-#else
-	error("BART not compiled for GPU!\n");
-#endif
-	else
-		jtsense_recon(&conf, cfimg, italgo, iconf, forward_op, nr_penalties, thresh_ops,
-				(ADMM == algo) ? trafos : NULL, NULL, cfksp, cfimg_truth);
+	const struct operator_s* t2sh_pics_op = operator_t2sh_pics_create(&conf, italgo, iconf, forward_op, nr_penalties, thresh_ops,
+				(ADMM == algo) ? trafos : NULL, NULL, cfimg_truth, use_gpu);
+
+	operator_apply(t2sh_pics_op, DIMS, cfimg_dims, cfimg, DIMS, cfksp_dims, cfksp);
+
+	operator_free(t2sh_pics_op);
 
 	debug_printf(DP_INFO, "Rescaling: %f\n", scaling);
 	md_zsmul(DIMS, cfimg_dims, cfimg, cfimg, scaling);

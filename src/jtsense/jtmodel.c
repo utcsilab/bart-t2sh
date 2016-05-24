@@ -32,6 +32,8 @@
 
 struct jtmodel_data {
 
+	linop_data_t base;
+
 	long cfksp_dims[DIMS];
 
 	const struct linop_s* sense_op;
@@ -42,6 +44,8 @@ struct jtmodel_data {
 
 
 struct stkern_data {
+
+	operator_data_t base;
 
 	long fake_cfksp_dims[DIMS];
 	long cfksp_dims[DIMS];
@@ -126,9 +130,9 @@ transpose 6 15 tmp4 tmp5
 }
 
 
-static void stkern_apply(const void* _data, unsigned int N, void* args[N])
+static void stkern_apply(const operator_data_t* _data, unsigned int N, void* args[N])
 {
-	const struct stkern_data* data = _data;
+	const struct stkern_data* data = CONTAINER_OF(_data, const struct stkern_data, base);
 
 	long fake_cfksp_strs[DIMS];
 	long stkern_strs[DIMS];
@@ -147,9 +151,9 @@ static void stkern_apply(const void* _data, unsigned int N, void* args[N])
 
 }
 
-static void stkern_del(const void* _data)
+static void stkern_del(const operator_data_t* _data)
 {
-	const struct stkern_data* data = _data;
+	const struct stkern_data* data = CONTAINER_OF(_data, const struct stkern_data, base);
 	md_free((void*)data->stkern_mat);
 	free((void*)data);
 }
@@ -161,7 +165,7 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 {
 
 
-	struct stkern_data* data = xmalloc(sizeof(struct stkern_data));
+	PTR_ALLOC(struct stkern_data, data);
 
 	// FIXME this is very very slow on GPU
 	complex float* stkern_mat = md_alloc(DIMS, stkern_dims, CFL_SIZE);
@@ -175,6 +179,8 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 		md_free(stkern_mat);
 		stkern_mat = gpu_stkern_mat;
 	}
+#else
+	assert(!use_gpu);
 #endif
 
 	data->stkern_mat = stkern_mat;
@@ -187,11 +193,11 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	fake_cfksp_dims[TE_DIM] = cfksp_dims[COEFF_DIM];
 	md_copy_dims(DIMS, data->fake_cfksp_dims, fake_cfksp_dims);
 
-	return operator_create(DIMS, cfksp_dims, DIMS, cfksp_dims, data, stkern_apply, stkern_del);
+	return operator_create(DIMS, cfksp_dims, DIMS, cfksp_dims, &data->base, stkern_apply, stkern_del);
 }
 
 
-static void jtmodel_forward(const void* _data, complex float* dst, const complex float* src)
+static void jtmodel_forward(const linop_data_t* _data, complex float* dst, const complex float* src)
 {
 	UNUSED(src);
 	UNUSED(dst);
@@ -200,18 +206,18 @@ static void jtmodel_forward(const void* _data, complex float* dst, const complex
 }
 
 
-static void jtmodel_adjoint(const void* _data, complex float* dst, const complex float* src)
+static void jtmodel_adjoint(const linop_data_t* _data, complex float* dst, const complex float* src)
 {
+	const struct jtmodel_data* data = CONTAINER_OF(_data, const struct jtmodel_data, base);
 
-	const struct jtmodel_data* data = _data;
 	linop_adjoint_unchecked(data->sense_op, dst, src);
 }
 
 
-static void jtmodel_normal(const void* _data, complex float* dst, const complex float* src)
+static void jtmodel_normal(const linop_data_t* _data, complex float* dst, const complex float* src)
 {
 
-	const struct jtmodel_data* data = _data;
+	const struct jtmodel_data* data = CONTAINER_OF(_data, const struct jtmodel_data, base);
 
 	complex float* cfksp2 = md_alloc_sameplace(DIMS, data->cfksp_dims, CFL_SIZE, src);
 
@@ -224,10 +230,11 @@ static void jtmodel_normal(const void* _data, complex float* dst, const complex 
 }
 
 
-static void jtmodel_del(const void* _data)
+static void jtmodel_del(const linop_data_t* _data)
 {
 
-	const struct jtmodel_data* data = _data;
+	const struct jtmodel_data* data = CONTAINER_OF(_data, const struct jtmodel_data, base);
+
 	operator_free(data->stkern_op);
 	md_free(data->cfksp);
 	free((void*)data);
@@ -251,7 +258,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		bool use_gpu)
 {
 
-	struct jtmodel_data* data = xmalloc(sizeof(struct jtmodel_data));
+	PTR_ALLOC(struct jtmodel_data, data);
 
 	data->sense_op = sense_op;
 
@@ -271,7 +278,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims, use_gpu);
 	data->stkern_op = stkern_op;
 
-	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, data, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
+	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, &data->base, jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
 
 }
 

@@ -35,8 +35,8 @@
 
 
 
-static const char* usage_str = "<echoes2skip> <num_echoes> <vieworder_sort> <vieworder_sort_dab> <data_in> <kspace_out> [<pat_out>]";
-static const char* help_str = "Reorder data according to vieworder files and output corresponding kspace.\n";
+static const char* usage_str = "<echoes2skip> <num_echoes> <vieworder_sort> <vieworder_sort_dab> <data_in> <kspace_out>";
+static const char* help_str = "Reorder data according to vieworder files and output corresponding kspace.";
 
 
 
@@ -46,12 +46,10 @@ int main_t2sh_prep(int argc, char* argv[])
 
 	bool wavg = false;
 	bool proj = false;
-	bool pat = false;
 
 	const char* basis_file = NULL;
 	const char* vieworder_sort_file = NULL;
 	const char* vieworder_dab_file = NULL;
-	const char* pat_file = NULL;
 
 	unsigned int echoes2skip = 0;
 	unsigned int num_echoes = 0;
@@ -65,7 +63,7 @@ int main_t2sh_prep(int argc, char* argv[])
 		OPT_UINT('K', &K, "K", "Subspace size for -b (Default K=4)"),
 	};
 
-	cmdline(&argc, argv, 6, 7, usage_str, help_str, ARRAY_SIZE(opts), opts);
+	cmdline(&argc, argv, 6, 6, usage_str, help_str, ARRAY_SIZE(opts), opts);
 
 
 	if (NULL != basis_file)
@@ -74,13 +72,6 @@ int main_t2sh_prep(int argc, char* argv[])
 	if (proj && wavg)
 		error("Cannot project and average\n");
 
-	if (8 == argc) {
-
-		pat = true;
-		pat_file = argv[7];
-		assert(proj);
-	}
-
 
 	// -----------------------------------------------------------
 	// load data
@@ -88,7 +79,6 @@ int main_t2sh_prep(int argc, char* argv[])
 	long dat_dims[DIMS];
 	long ksp_dims[DIMS];
 	long bas_dims[DIMS];
-	long pat_dims[DIMS];
 
 	echoes2skip = atoi(argv[1]);
 	num_echoes = atoi(argv[2]);
@@ -98,7 +88,7 @@ int main_t2sh_prep(int argc, char* argv[])
 
 	complex float* dat = load_cfl(argv[5], DIMS, dat_dims);
 
-	if (!wavg && dat_dims[READ_DIM] > 1)
+	if (!wavg && !proj && dat_dims[READ_DIM] > 1)
 		debug_printf(DP_WARN, "Warning: 3D volume expanding into time!\n");
 
 	md_copy_dims(DIMS, ksp_dims, dat_dims);
@@ -107,25 +97,36 @@ int main_t2sh_prep(int argc, char* argv[])
 
 	if (proj) {
 
+		// set kspace subspace dimensions
 		ksp_dims[COEFF_DIM] = K;
-		basis = load_cfl(basis_file, DIMS, bas_dims);
+
+		// load subspace basis
+		long bas_full_dims[DIMS];
+		long pos[DIMS] = MD_INIT_ARRAY(DIMS, 0);
+
+		complex float* tmp = load_cfl(basis_file, DIMS, bas_full_dims);
+
+		md_select_dims(DIMS, ~COEFF_FLAG, bas_dims, bas_full_dims);
+		bas_dims[COEFF_DIM] = K;
+		basis = md_alloc(DIMS, bas_dims, CFL_SIZE);
+
+		md_copy_block(DIMS, pos, bas_dims, basis, bas_full_dims, tmp, CFL_SIZE);
+		unmap_cfl(DIMS, bas_full_dims, tmp);
 	}
 	else if (!wavg)
 		ksp_dims[TE_DIM] = num_echoes;
 
-	md_select_dims(DIMS, ~(COIL_FLAG), pat_dims, dat_dims);
-	pat_dims[TE_DIM] = num_echoes;
-
 	complex float* ksp = create_cfl(argv[6], DIMS, ksp_dims);
-	complex float* pattern = NULL;
 
 
 	if (proj) {
 
 		// expand kspace into subspace, reorder data
-		pattern = (pat ? create_cfl : anon_cfl)(pat_file, DIMS, pat_dims);
-		if( 0 != cfksp_pat_from_view_files(DIMS, ksp_dims, ksp, pat_dims, pattern, dat_dims, dat, bas_dims, basis, K, echoes2skip, 0, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_file, vieworder_dab_file))
-			error("Error executing cfksp_pat_from_view_files\n");
+		debug_printf(DP_INFO, "calling cfksp \n");
+		if( 0 != cfksp_from_view_files(DIMS, ksp_dims, ksp, dat_dims, dat, bas_dims, basis, echoes2skip, 0, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_file, vieworder_dab_file))
+			error("Error executing cfksp_from_view_files\n");
+		debug_printf(DP_INFO, "done\n");
+
 	}
 	else if (wavg) {
 
@@ -152,8 +153,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	if (proj) {
 
 		free((void*)basis_file);
-		unmap_cfl(DIMS, pat_dims, pattern);
-		unmap_cfl(DIMS, bas_dims, basis);
+		md_free(basis);
 	}
 
 	double run_time = timestamp() - start_time;

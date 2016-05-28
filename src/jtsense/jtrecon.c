@@ -891,9 +891,8 @@ int cfksp_pat_from_view_files(unsigned int D, const long cfksp_dims[D], complex 
 	assert(skips_start == 0 || skips_start == 1);
 
 	// compute compact cfksp directly from view files
-	if ( 0 != cfksp_from_view_files(D, cfksp_dims, cfksp, dat_dims, data, phi_dims, phi, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file)) {
+	if ( 0 != cfksp_from_view_files(D, cfksp_dims, cfksp, dat_dims, data, phi_dims, phi, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file))
 		error("Error executing cfksp_from_view_files\n");
-	}
 
 	md_free(phi);
 

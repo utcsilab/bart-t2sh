@@ -39,7 +39,7 @@ static void help(const char* name, FILE *fd)
 			"\t-s\tfile does not contain the first (header) line\n" 
 		"\t-h\thelp\n");
 }
-
+//
 static int read_vieworder_file(char* filename, _Bool skip, unsigned int D, long dims[D], unsigned int echoes2skip, complex float* te_mask)
 {
 	FILE *fd;
@@ -67,15 +67,17 @@ static int read_vieworder_file(char* filename, _Bool skip, unsigned int D, long 
 	long trash;
 	int i;
 
-	debug_printf(DP_DEBUG3, "dims = \n");
-	debug_print_dims(DP_DEBUG3, D, dims);
+	//debug_printf(DP_DEBUG3, "dims = \n");
+	//debug_print_dims(DP_DEBUG3, D, dims);
 	while (fgets(line_buffer, sizeof(line_buffer), fd)) {
 
 		if (5 == (i = sscanf(line_buffer, "%ld %ld %ld %ld %ld \n", &trash, &trash, &mask_pos[TE_DIM], &mask_pos[PHS1_DIM], &mask_pos[PHS2_DIM])) ){
+			
 			//debug_printf(DP_DEBUG3, "te = %ld\tky=%ld\tkz=%d\n", mask_pos[TE_DIM], mask_pos[PHS1_DIM], mask_pos[PHS2_DIM]);
-			if (mask_pos[PHS1_DIM] != -1 && mask_pos[PHS2_DIM] != -1) {
+
+			if (mask_pos[PHS1_DIM] != -1 && mask_pos[PHS2_DIM] != -1 && mask_pos[TE_DIM] >= echoes2skip) {
+
 				mask_pos[TE_DIM] -= echoes2skip;
-				//debug_print_dims(DP_DEBUG3, D, mask_pos);
 				long idx = md_calc_offset(D, strs, mask_pos);
 				te_mask[idx / CFL_SIZE] = 1.;
 			}

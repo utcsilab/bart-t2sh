@@ -7,7 +7,6 @@
  *
  */
 
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <assert.h>
 #include <complex.h>
@@ -15,10 +14,13 @@
 #include <stdio.h>
 #include <unistd.h>
 
+
+#include "misc/debug.h"
 #include "misc/io.h"
 #include "misc/mmio.h"
 #include "misc/mri.h"
 #include "misc/misc.h"
+#include "misc/opts.h"
 
 #include "num/multind.h"
 #include "num/flpmath.h"
@@ -28,90 +30,34 @@
 #endif
 
 
-static void usage(const char* name, FILE* fd)
-{
-	fprintf(fd,	"Usage: %s [options] <input> <basis> <output>\n", name);
-}
+static const char* usage_str = "<input> <basis> <output>";
+static const char* help_str = "Compute temporal projection or backprojection.";
 
-
-static void help(const char* name, FILE *fd)
-{
-	usage(name, fd);
-	fprintf(fd,	"Compute temporal projection or backprojection.\n"
-		"\t-f\tCompute x = Phi alpha\tDEFAULT: compute alpha = Phi^H x\n"
-		"\t-K\tNumber of coefficients\tDEFAULT: all\n"
-		"\t-z <xbar>\tUse zero-mean PCA with mean xbar \tDEFAULT: off\n"
-		"\t-t <TE>\tCompute single TE \tDEFAULT: off\n"
-		"\t-h\thelp\n");
-}
 
 int main_t2sh_proj(int argc, char* argv[])
 {
 	bool forward = false;
-	bool zmean = false;
-	long K = 0;
-	char xbar_name[100];
-
+	unsigned int K = 0;
 	int single_TE = -1;
 
-	int c;
-	while (-1 != (c = getopt(argc, argv, "t:K:z:fh"))) {
+	const struct opt_s opts[] = {
 
-		switch (c) {
+		OPT_UINT('K', &K, "K", "Subspace size"),
+		OPT_SET('f', &forward, "Compute forward: x = Phi alpha"),
+		OPT_INT('t', &single_TE, "TE", "Compute single TE"),
+	};
 
-		case 'K':
-			K = atoi(optarg);
-			break;
+	cmdline(&argc, argv, 3, 3, usage_str, help_str, ARRAY_SIZE(opts), opts);
 
-		case 'z':
-			zmean = true;
-			sprintf(xbar_name, "%s", optarg);
-			break;
-
-		case 'f':
-			forward = true;
-			break;
-
-		case 't':
-			single_TE = atoi(optarg);
-			break;
-
-		case 'h':
-			help(argv[0], stdout);
-			exit(0);
-
-		default:
-			usage(argv[0], stderr);
-			exit(1);
-		}
-	}
-
-	if (argc - optind == 0) {
-		usage(argv[0], stderr);
-		exit(1);
-	}
-
-	if (argc - optind != 3) {
-		fprintf(stderr,"Input arguments do not match expected format.\n");
-		help(argv[0], stderr);
-		exit(1);
-	}
-		
 
 	long in_dims[DIMS];
 	long bas_dims[DIMS];
 	long out_dims[DIMS];
 	long max_dims[DIMS];
-	long xbar_dims[DIMS];
 
-	complex float* in_data = load_cfl(argv[optind + 0], DIMS, in_dims);
-	complex float* bas_data = load_cfl(argv[optind + 1], DIMS, bas_dims);
-	complex float* xbar_data = NULL;
+	complex float* in_data = load_cfl(argv[1], DIMS, in_dims);
+	complex float* bas_data = load_cfl(argv[2], DIMS, bas_dims);
 
-	if (zmean) {
-		xbar_data = load_cfl(xbar_name, DIMS, xbar_dims);
-		assert(xbar_dims[TE_DIM] == bas_dims[TE_DIM]);
-	}
 
 	// FIXME: if the basis is truncated, then the forward operator will not work.
 	// might be better to use bas_dims[TE_DIM] for forward
@@ -126,26 +72,26 @@ int main_t2sh_proj(int argc, char* argv[])
 	}
 
 	if (forward) {
+
 		md_select_dims(DIMS, ~COEFF_FLAG, out_dims, in_dims);
+
 		if (-1 != single_TE)
 			out_dims[TE_DIM] = 1;
 		else
 			out_dims[TE_DIM] = num_coeffs;
 	}
 	else {
+
 		md_select_dims(DIMS, ~TE_FLAG, out_dims, in_dims);
 		out_dims[COEFF_DIM] = K;
 	}
 
-	out_dims[ITER_DIM] = bas_dims[ITER_DIM];
-
-	complex float* out_data = create_cfl(argv[optind + 2], DIMS, out_dims);
+	complex float* out_data = create_cfl(argv[3], DIMS, out_dims);
 	md_clear(DIMS, out_dims, out_data, CFL_SIZE);
 
 	long in_strs[DIMS];
 	long bas_strs[DIMS];
 	long out_strs[DIMS];
-	long xbar_strs[DIMS];
 
 	complex float* bas = bas_data;
 	long single_bas_dims[DIMS];
@@ -166,32 +112,13 @@ int main_t2sh_proj(int argc, char* argv[])
 	md_calc_strides(DIMS, bas_strs, single_bas_dims, CFL_SIZE);
 	md_calc_strides(DIMS, out_strs, out_dims, CFL_SIZE);
 
-	if (zmean)
-		md_calc_strides(DIMS, xbar_strs, xbar_dims, CFL_SIZE);
-
 	for (unsigned int i = 0; i < DIMS; i++)
 		max_dims[i] = (in_dims[i] < out_dims[i] ? out_dims[i] : in_dims[i]);
 
 	if (forward)
 		max_dims[COEFF_DIM] = K;
 
-	complex float* tmp = in_data;
-
-	if (zmean) {
-		tmp = md_alloc(DIMS, in_dims, CFL_SIZE);
-		md_copy(DIMS, in_dims, tmp, in_data, CFL_SIZE);
-	}
-
-	if (zmean && !forward)
-		md_zaxpy2(DIMS, in_dims, in_strs, tmp, -1., xbar_strs, xbar_data);
-
-	(forward ? md_zfmac2 : md_zfmacc2)(DIMS, max_dims, out_strs, out_data, in_strs, tmp, bas_strs, bas);
-
-	if (zmean && forward)
-		md_zaxpy2(DIMS, out_dims, out_strs, out_data, 1., xbar_strs, xbar_data);
-
-	if (zmean)
-		md_free(tmp);
+	(forward ? md_zfmac2 : md_zfmacc2)(DIMS, max_dims, out_strs, out_data, in_strs, in_data, bas_strs, bas);
 
 	if (-1 != single_TE)
 		md_free(bas);

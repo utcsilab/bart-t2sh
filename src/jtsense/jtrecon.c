@@ -627,12 +627,12 @@ int wavg_ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex flo
 	if (0 != vieworder_preprocess(dab_views_file, header, echoes2skip, view_dims, dab_views))
 		return -1;
 
-	// [1 Y Z C 1 T]
+	// [1 Y Z C 1 T ...]
 	long te_dims[D];
 	md_select_dims(D, ~READ_FLAG, te_dims, ksp_dims);
 	te_dims[TE_DIM] = T;
 
-	// [1 Y Z C 1 1]
+	// [1 Y Z C 1 1 ...]
 	long ksp1_dims[D];
 	md_select_dims(D, ~READ_FLAG, ksp1_dims, ksp_dims);
 

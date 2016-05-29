@@ -262,7 +262,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 
 	data->sense_op = sense_op;
 
-	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG), data->cfksp_dims, max_dims);
+	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG | CSHIFT_FLAG), data->cfksp_dims, max_dims);
 
 #ifdef USE_CUDA
 	data->cfksp = (use_gpu ? md_alloc_gpu : md_alloc)(DIMS, data->cfksp_dims, CFL_SIZE);

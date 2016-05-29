@@ -166,6 +166,8 @@ int main_t2sh_pics(int argc, char* argv[])
 	complex float* cfimg = NULL;
 
 	// FIXME: check dimensions of cfksp to match conf.K
+
+	// keep first K basis elements
 	if (basis_dims[COEFF_DIM] != conf.K) {
 
 		md_select_dims(DIMS, TE_FLAG, subs_dims, basis_dims);
@@ -180,15 +182,11 @@ int main_t2sh_pics(int argc, char* argv[])
 		md_copy_dims(DIMS, basis_dims, subs_dims);
 	}
 
-	md_copy_dims(DIMS, max_dims, basis_dims);
-
+	md_copy_dims(DIMS, max_dims, cfksp_dims);
 	md_copy_dims(5, max_dims, sens_dims);
+	max_dims[TE_DIM] = basis_dims[TE_DIM];
 
 	md_select_dims(DIMS, ~(COIL_FLAG | TE_FLAG), cfimg_dims, max_dims);
-
-	if (!md_check_compat(DIMS, ~(FFT_FLAGS | MAPS_FLAG), cfimg_dims, sens_dims))
-		error("Dimensions of coefficent image and sensitivities do not match!\n");
-
 	if (1 != cfksp_dims[MAPS_DIM])
 		error("kspace should not have multiple sets of maps!\n");
 
@@ -307,7 +305,11 @@ int main_t2sh_pics(int argc, char* argv[])
 	debug_print_dims(DP_DEBUG2, DIMS, max_dims_sens);
 
 
-	const struct linop_s* sense_op = sense_init(max_dims_sens, (FFT_FLAGS | SENS_FLAGS), sens);
+	long sens_flags = (FFT_FLAGS | SENS_FLAGS);
+	if (max_dims_sens[CSHIFT_DIM] > 1)
+		sens_flags = MD_SET(sens_flags, CSHIFT_DIM);
+
+	const struct linop_s* sense_op = sense_init(max_dims_sens, sens_flags, sens);
 
 
 	if (rvc) {

@@ -24,6 +24,7 @@
 
 #include "num/multind.h"
 #include "num/flpmath.h"
+#include "num/init.h"
 
 #include "sense/optcom.h"
 #include "jtsense/jtrecon.h"

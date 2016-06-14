@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "num/multind.h"
+#include "num/init.h"
 
 #include "misc/mmio.h"
 #include "misc/mri.h"
@@ -93,6 +94,8 @@ static int read_vieworder_file(char* filename, _Bool skip, unsigned int D, long 
 
 int main_t2sh_mask(int argc, char* argv[])
 {
+	num_init();
+
 	int c;
 	_Bool skip = false;
 

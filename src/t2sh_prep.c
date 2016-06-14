@@ -42,6 +42,8 @@ static const char* help_str = "Reorder data according to vieworder files and out
 
 int main_t2sh_prep(int argc, char* argv[])
 {
+	num_init();
+
 	double start_time = timestamp();
 
 	bool wavg = false;

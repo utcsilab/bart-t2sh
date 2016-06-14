@@ -16,9 +16,9 @@
 #include "num/multind.h"
 #include "num/flpmath.h"
 #include "num/fft.h"
-#include "num/init.h"
 #include "num/ops.h"
 #include "num/iovec.h"
+#include "num/init.h"
 
 #include "iter/lsqr.h"
 #include "iter/prox.h"

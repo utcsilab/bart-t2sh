@@ -24,6 +24,7 @@
 
 #include "num/multind.h"
 #include "num/flpmath.h"
+#include "num/init.h"
 
 #ifndef DIMS
 #define DIMS 16
@@ -48,6 +49,8 @@ int main_t2sh_proj(int argc, char* argv[])
 	};
 
 	cmdline(&argc, argv, 3, 3, usage_str, help_str, ARRAY_SIZE(opts), opts);
+
+	num_init();
 
 
 	long in_dims[DIMS];

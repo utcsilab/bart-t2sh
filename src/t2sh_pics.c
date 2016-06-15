@@ -156,7 +156,6 @@ int main_t2sh_pics(int argc, char* argv[])
 	long pat_dims[DIMS];
 	long sens_dims[DIMS];
 	long basis_dims[DIMS];
-	long subs_dims[DIMS]; // basis truncated to K elements
 	long cfimg_dims[DIMS];
 
 	complex float* cfksp = load_cfl(argv[1], DIMS, cfksp_dims);
@@ -168,19 +167,49 @@ int main_t2sh_pics(int argc, char* argv[])
 	// FIXME: check dimensions of cfksp to match conf.K
 
 	// keep first K basis elements
-	if (basis_dims[COEFF_DIM] != conf.K) {
+	complex float* bas = NULL;
+	if (basis_dims[COEFF_DIM] > conf.K) {
 
+		long subs_dims[DIMS]; // basis truncated to K elements
 		md_select_dims(DIMS, TE_FLAG, subs_dims, basis_dims);
 		subs_dims[COEFF_DIM] = conf.K;
 
 		long pos[DIMS] = MD_INIT_ARRAY(DIMS, 0);
 
-		complex float* bas = anon_cfl(NULL, DIMS, subs_dims);
+		bas = anon_cfl(NULL, DIMS, subs_dims);
 		md_copy_block(DIMS, pos, subs_dims, bas, basis_dims, basis, CFL_SIZE);
 		unmap_cfl(DIMS, basis_dims, basis);
 		basis = bas;
 		md_copy_dims(DIMS, basis_dims, subs_dims);
 	}
+	else if (basis_dims[COEFF_DIM] < conf.K) {
+
+		debug_printf(DP_WARN, "Subspace size is larger than basis. Using subspace size %d\n", basis_dims[COEFF_DIM]);
+		conf.K = basis_dims[COEFF_DIM];
+	}
+
+	// keep first K ksp coefficients
+	complex float* cfkspK = NULL;
+	if (cfksp_dims[COEFF_DIM] > conf.K) {
+
+		long cfksp_trunc_dims[DIMS]; // cfksp truncated to K elements
+		md_select_dims(DIMS, ~COEFF_FLAG, cfksp_trunc_dims, cfksp_dims);
+		cfksp_trunc_dims[COEFF_DIM] = conf.K;
+
+		long pos[DIMS] = MD_INIT_ARRAY(DIMS, 0);
+
+		cfkspK = anon_cfl(NULL, DIMS, cfksp_trunc_dims);
+		md_copy_block(DIMS, pos, cfksp_trunc_dims, cfkspK, cfksp_dims, cfksp, CFL_SIZE);
+		unmap_cfl(DIMS, cfksp_dims, cfksp);
+		cfksp = cfkspK;
+		md_copy_dims(DIMS, cfksp_dims, cfksp_trunc_dims);
+	}
+	else if (cfksp_dims[COEFF_DIM] < conf.K) {
+
+		debug_printf(DP_WARN, "Subspace size is larger than cfksp. Using subspace size %d\n", cfksp_dims[COEFF_DIM]);
+		conf.K = cfksp_dims[COEFF_DIM];
+	}
+
 
 	md_copy_dims(DIMS, max_dims, cfksp_dims);
 	md_copy_dims(5, max_dims, sens_dims);

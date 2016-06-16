@@ -47,6 +47,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	double start_time = timestamp();
 
 	bool wavg = false;
+	bool avg = false;
 	bool proj = false;
 
 	const char* basis_file = NULL;
@@ -61,6 +62,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	const struct opt_s opts[] = {
 
 		OPT_SET('w', &wavg, "Weighted average along time"),
+		OPT_SET('a', &avg, "average along time"),
 		OPT_STRING('b', &basis_file, "<file>", "Project onto basis in <file>"),
 		OPT_UINT('K', &K, "K", "Subspace size for -b (Default K=4)"),
 	};
@@ -71,7 +73,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	if (NULL != basis_file)
 		proj = true;
 
-	if (proj && wavg)
+	if (proj && (wavg || avg))
 		error("Cannot project and average\n");
 
 
@@ -90,7 +92,7 @@ int main_t2sh_prep(int argc, char* argv[])
 
 	complex float* dat = load_cfl(argv[5], DIMS, dat_dims);
 
-	if (!wavg && !proj && dat_dims[READ_DIM] > 1)
+	if (!(wavg || avg) && !proj && dat_dims[READ_DIM] > 1)
 		debug_printf(DP_WARN, "Warning: 3D volume expanding into time!\n");
 
 	md_copy_dims(DIMS, ksp_dims, dat_dims);
@@ -115,7 +117,7 @@ int main_t2sh_prep(int argc, char* argv[])
 		md_copy_block(DIMS, pos, bas_dims, basis, bas_full_dims, tmp, CFL_SIZE);
 		unmap_cfl(DIMS, bas_full_dims, tmp);
 	}
-	else if (!wavg)
+	else if (!(wavg || avg))
 		ksp_dims[TE_DIM] = num_echoes;
 
 	complex float* ksp = create_cfl(argv[6], DIMS, ksp_dims);
@@ -130,11 +132,11 @@ int main_t2sh_prep(int argc, char* argv[])
 		debug_printf(DP_INFO, "done\n");
 
 	}
-	else if (wavg) {
+	else if (wavg || avg) {
 
 		// expand kspace into time bins, reorder data, and average
-		if( 0 != wavg_ksp_from_view_files(DIMS, ksp_dims, ksp, dat_dims, dat, echoes2skip, true, MAX_TRAINS, MAX_ECHOES, num_echoes, vieworder_sort_file, vieworder_dab_file))
-			error("Error executing wavg_ksp_from_view_files\n");
+		if( 0 != avg_ksp_from_view_files(DIMS, wavg, ksp_dims, ksp, dat_dims, dat, echoes2skip, true, MAX_TRAINS, MAX_ECHOES, num_echoes, vieworder_sort_file, vieworder_dab_file))
+			error("Error executing avg_ksp_from_view_files\n");
 	}
 	else {
 

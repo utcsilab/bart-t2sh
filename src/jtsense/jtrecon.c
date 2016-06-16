@@ -613,7 +613,7 @@ int ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* k
  * ksp_dims: [X Y Z C 1 1]
  * dat_dims: [X Y Z C 1 1]
  */
-int wavg_ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file)
+int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file)
 {
 	long view_dims[3] = { Nmax, Tmax, 2 };
 	long* ksp_views = md_alloc(3, view_dims, sizeof(long));
@@ -645,20 +645,24 @@ int wavg_ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex flo
 	long te_str[D];
 	md_calc_strides(D, te_str, te_dims, CFL_SIZE);
 
-	// manually copy the 0th slice to initialize weights
-	complex float* tmp_te = md_alloc(D, te_dims, CFL_SIZE);
-	complex float* tmp1 = md_alloc(D, ksp1_dims, CFL_SIZE);
+	complex float* weights = NULL;
+	if (wavg) {
 
-	md_clear(D, te_dims, tmp_te, CFL_SIZE);
-	md_copy_block(D, pos, ksp1_dims, tmp1, dat_dims, data, CFL_SIZE);
+		// manually copy the 0th slice to initialize weights
+		complex float* tmp_te = md_alloc(D, te_dims, CFL_SIZE);
+		complex float* tmp1 = md_alloc(D, ksp1_dims, CFL_SIZE);
 
-	ksp_from_views(D, 0, te_dims, tmp_te, ksp1_dims, tmp1, view_dims, ksp_views, dab_views);
+		md_clear(D, te_dims, tmp_te, CFL_SIZE);
+		md_copy_block(D, pos, ksp1_dims, tmp1, dat_dims, data, CFL_SIZE);
 
-	complex float* weights = md_alloc(D, ksp1_dims, CFL_SIZE);
-	md_zwavg2_core1(D, te_dims, TE_FLAG, ksp1_str, weights, te_str, tmp_te);
+		ksp_from_views(D, 0, te_dims, tmp_te, ksp1_dims, tmp1, view_dims, ksp_views, dab_views);
 
-	md_free(tmp_te);
-	md_free(tmp1);
+		weights = md_alloc(D, ksp1_dims, CFL_SIZE);
+		md_zwavg2_core1(D, te_dims, TE_FLAG, ksp1_str, weights, te_str, tmp_te);
+
+		md_free(tmp_te);
+		md_free(tmp1);
+	}
 
 	int counter = 0;
 
@@ -676,7 +680,10 @@ int wavg_ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex flo
 
 		ksp_from_views(D, 0, te_dims, ksp_te, ksp1_dims, ksp1, view_dims, ksp_views, dab_views);
 
-		md_zwavg2_core2(D, te_dims, TE_FLAG, ksp1_str, ksp1, weights, te_str, ksp_te);
+		if (wavg)
+			md_zwavg2_core2(D, te_dims, TE_FLAG, ksp1_str, ksp1, weights, te_str, ksp_te);
+		else
+			md_zavg2(D, te_dims, TE_FLAG, ksp1_str, ksp1, te_str, ksp_te);
 
 		md_copy_block(D, pos1, ksp_dims, ksp, ksp1_dims, ksp1, CFL_SIZE);
 
@@ -687,7 +694,8 @@ int wavg_ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex flo
 		{ debug_printf(DP_DEBUG4, "%04d/%04ld    \n", ++counter, ksp_dims[READ_DIM]); }
 	}
 
-	md_free(weights);
+	if (wavg)
+		md_free(weights);
 
 	return 0;
 }

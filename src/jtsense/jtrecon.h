@@ -60,7 +60,7 @@ extern void ksp_from_views(unsigned int D, unsigned int skips_start, const long 
 
 extern int ksp_from_view_files(unsigned int D, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, unsigned int skips_start, _Bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file);
 
-extern int wavg_ksp_from_view_files(unsigned int D, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, _Bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file);
+extern int avg_ksp_from_view_files(unsigned int D, _Bool wavg, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, _Bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file);
 
 extern void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp_dims[D], _Complex float* cfksp, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, long view_dims[3], const long* ksp_views, const long* dab_views);
 

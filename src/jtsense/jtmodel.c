@@ -57,7 +57,10 @@ struct stkern_data {
 
 
 
-// consider moving this up, so that rjtsense only has to call this once
+/**
+ * Create T2Sh kernel, Psi = Phi^H P Phi,
+ * where Phi is the basis and P is the sampling pattern
+ */
 static void create_stkern_mat(complex float* stkern_mat,
 		const long pat_dims[DIMS], const complex float* pat,
 		const long bas_dims[DIMS], const complex float* bas)
@@ -65,8 +68,8 @@ static void create_stkern_mat(complex float* stkern_mat,
 
 #if 0
 fmac mask bas tmp
-transpose 6 16 tmp tmp2
-tproj -K4 tmp2 bas tmp3
+transpose 6 15 tmp tmp2
+t2sh_proj -K4 tmp2 bas tmp3
 transpose 5 6 tmp3 tmp4
 transpose 6 15 tmp4 tmp5
 #endif
@@ -74,10 +77,14 @@ transpose 6 15 tmp4 tmp5
 	// -----------------------------------------------------------
 	// initialize dimensions and strides
 
-	long max_dims[DIMS + 1];      // [X Y Z 1 1 T K 1 ... 1 1]
-	long trp_dims[DIMS + 1];      // [X Y Z 1 1 T 1 1 ... 1 K]
-	long tproj_dims[DIMS + 1];    // [X Y Z 1 1 1 K 1 ... 1 K] 
-	long fake_bas_dims[DIMS + 1]; // [1 1 1 1 1 T K 1 ... 1 1]
+	long max_dims[DIMS + 1];      // [X Y Z 1 1 T K A B C ... 1 1]
+	long trp_dims[DIMS + 1];      // [X Y Z 1 1 T 1 A B C ... 1 K]
+
+	long tproj_dims[DIMS + 1];    // [X Y Z 1 1 1 K A B C ... 1 K] 
+	long tproj2_dims[DIMS + 1];   // [X Y Z 1 1 K 1 A B C ... 1 K] 
+	long stkern_dims[DIMS + 1];   // [X Y Z 1 1 K K A B C ... 1 1] 
+
+	long fake_bas_dims[DIMS + 1]; // [1 1 1 1 1 T K 1 1 1 ... 1 1]
 
 	long max_strs[DIMS];
 	long bas_strs[DIMS];
@@ -91,12 +98,21 @@ transpose 6 15 tmp4 tmp5
 	}
 	max_dims[DIMS] = 1;
 
+	// stick the COEFF_DIM into the extra dummy dimension, so that it doesn't get overwritten by the projection
 	md_select_dims(DIMS + 1, ~COEFF_FLAG, trp_dims, max_dims);
 	trp_dims[DIMS] = max_dims[COEFF_DIM];
 
+	// the t2sh_proj will squash the TE_DIM and set COEFF_DIM to K
 	md_select_dims(DIMS + 1, ~TE_FLAG, tproj_dims, trp_dims);
 	tproj_dims[COEFF_DIM] = bas_dims[COEFF_DIM];
 
+	// also want tproj with TE_DIM in the right place
+	md_transpose_dims(DIMS + 1, TE_DIM, COEFF_DIM, tproj2_dims, tproj_dims);
+
+	// final result is a symmetric matrix with possibly higher-level dims
+	md_transpose_dims(DIMS + 1, COEFF_DIM, DIMS, stkern_dims, tproj2_dims);
+
+	// same as basis, but with the extra dummy dimension
 	md_copy_dims(DIMS, fake_bas_dims, bas_dims);
 	fake_bas_dims[DIMS] = 1;
 
@@ -108,25 +124,42 @@ transpose 6 15 tmp4 tmp5
 	// -----------------------------------------------------------
 	// fmac pattern basis tmp
 
-	complex float* tmp = md_alloc_sameplace(DIMS, max_dims, CFL_SIZE, bas);
+	complex float* tmp = md_alloc_sameplace(DIMS + 1, max_dims, CFL_SIZE, bas);
 
 	md_clear(DIMS, max_dims, tmp, CFL_SIZE);
 	md_zfmac2(DIMS, max_dims, max_strs, tmp, bas_strs, bas, pat_strs, pat);
 
 
 	// -----------------------------------------------------------
-	// transpose 6 16 tmp tmp
+	// transpose 6 16 tmp tmp2
 
-	md_transpose(DIMS + 1, COEFF_DIM, DIMS, trp_dims, tmp, max_dims, tmp, CFL_SIZE);
+	// cannot do in place because there may be higher-level dims in use
+	complex float* tmp2 = md_alloc_sameplace(DIMS + 1, trp_dims, CFL_SIZE, bas);
+	md_transpose(DIMS + 1, COEFF_DIM, DIMS, trp_dims, tmp2, max_dims, tmp, CFL_SIZE);
+	md_free(tmp);
 
 
 	// -----------------------------------------------------------
-	// tproj tmp bas stkern_mat
+	// tproj tmp2 bas tmp3
 
-	md_zmatmulc(DIMS + 1, tproj_dims, stkern_mat, fake_bas_dims, bas, trp_dims, tmp);
+	complex float* tmp3 = md_alloc_sameplace(DIMS + 1, tproj_dims, CFL_SIZE, bas);
+	md_zmatmulc(DIMS + 1, tproj_dims, tmp3, fake_bas_dims, bas, trp_dims, tmp2);
+	md_free(tmp2);
 
 
-	md_free(tmp);
+	// -----------------------------------------------------------
+	// transpose 5 6 tmp3 tmp4
+
+	complex float* tmp4 = md_alloc_sameplace(DIMS + 1, tproj2_dims, CFL_SIZE, bas);
+	md_transpose(DIMS + 1, TE_DIM, COEFF_DIM, tproj2_dims, tmp4, tproj_dims, tmp3, CFL_SIZE);
+	md_free(tmp3);
+
+
+	// -----------------------------------------------------------
+	// transpose 6 16 tmp4 stkern_mat
+	
+	md_transpose(DIMS + 1, COEFF_DIM, DIMS, stkern_dims, stkern_mat, tproj2_dims, tmp4, CFL_SIZE);
+	md_free(tmp4);
 }
 
 
@@ -168,6 +201,7 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	PTR_ALLOC(struct stkern_data, data);
 
 	// FIXME this is very very slow on GPU
+	// FIXME does not work if pattern differs across CSHIFT dim
 	complex float* stkern_mat = md_alloc(DIMS, stkern_dims, CFL_SIZE);
 	create_stkern_mat(stkern_mat, pat_dims, pattern, bas_dims, basis);
 
@@ -272,7 +306,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 #endif
 
 	long stkern_dims[DIMS];
-	md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG | COEFF_FLAG), stkern_dims, max_dims);
+	md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG | COEFF_FLAG | CSHIFT_FLAG), stkern_dims, max_dims);
 	stkern_dims[TE_DIM] = stkern_dims[COEFF_DIM];
 
 	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims, use_gpu);

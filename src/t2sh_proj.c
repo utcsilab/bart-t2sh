@@ -81,7 +81,7 @@ int main_t2sh_proj(int argc, char* argv[])
 		if (-1 != single_TE)
 			out_dims[TE_DIM] = 1;
 		else
-			out_dims[TE_DIM] = num_coeffs;
+			out_dims[TE_DIM] = bas_dims[TE_DIM];
 	}
 	else {
 

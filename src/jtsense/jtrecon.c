@@ -345,7 +345,6 @@ int vieworder_preprocess(const char* filename, bool header, unsigned int echoes2
 	long pos[3];
 	md_set_dims(3, pos, 0);
 
-
 	FILE *fd;
 	char line_buffer[BUFSIZ];
 	long line_number = 0;
@@ -393,8 +392,10 @@ int vieworder_preprocess(const char* filename, bool header, unsigned int echoes2
 				views[idx / sizeof(long)] = kz;
 			}
 		}
-		else
+		else {
+			fclose(fd);
 			return -1;
+		}
 
 		++line_number;
 	}
@@ -579,6 +580,9 @@ int dat_from_view_files(unsigned int D, const long dat_dims[D], complex float* d
 
 	dat_from_views(D, dat_dims, dat, ksp_dims, ksp, view_dims, ksp_views, dab_views);
 
+	md_free(ksp_views);
+	md_free(dab_views);
+
 	return 0;
 
 }
@@ -603,6 +607,8 @@ int ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* k
 		return -1;
 
 	ksp_from_views(D, skips_start, ksp_dims, ksp, dat_dims, data, view_dims, ksp_views, dab_views);
+	md_free(ksp_views);
+	md_free(dab_views);
 
 	return 0;
 
@@ -696,6 +702,9 @@ int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], c
 
 	if (wavg)
 		md_free(weights);
+
+	md_free(ksp_views);
+	md_free(dab_views);
 
 	return 0;
 }

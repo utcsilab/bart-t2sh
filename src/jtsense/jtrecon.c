@@ -336,6 +336,56 @@ static void jtsense_recon_gpu(const struct jtsense_conf* conf, complex float* cf
 #endif
 
 
+int TR_vals_preprocess(const char* filename, const bool header, const long Nmax, long* TR_vals, long* TR_idx)
+{
+
+	FILE *fd;
+	char line_buffer[BUFSIZ];
+	long line_number = 0;
+
+	fd = fopen(filename, "r");
+	if (!fd)
+		error("Couldn't open file %s for reading.\n", filename);
+
+	if (0 == fgets(line_buffer, sizeof(line_buffer), fd))
+		return -1;
+
+	if (header) {
+		if (0 != sscanf(line_buffer, "et idx TR\n"))
+			return -1;
+	}
+
+	for (long i = 0; i < Nmax; i++)
+		TR_vals[i] = -1;
+
+	long i;
+	long train;
+	long TR;
+	long idx;
+
+	while (fgets(line_buffer, sizeof(line_buffer), fd)) {
+
+		if (3 == (i = sscanf(line_buffer, "%ld %ld %ld\n", &train, &idx, &TR)) ){
+
+			//debug_printf(DP_DEBUG3, "train=%ld, idx=%ld, TR=%ld\n", train, idx, TR);
+			assert(-1 == TR_vals[train]); // make sure it has not yet been assigned
+			TR_vals[train] = TR;
+			TR_idx[train] = idx;
+		}
+		else {
+			fclose(fd);
+			return -1;
+		}
+
+		++line_number;
+	}
+
+	fclose(fd);
+
+	return 0;
+}
+
+
 int vieworder_preprocess(const char* filename, bool header, unsigned int echoes2skip, long dims[3], long* views)
 {
 
@@ -375,7 +425,7 @@ int vieworder_preprocess(const char* filename, bool header, unsigned int echoes2
 	while (fgets(line_buffer, sizeof(line_buffer), fd)) {
 
 		if (5 == (i = sscanf(line_buffer, "%ld %ld %ld %ld %ld \n", &trash, &train, &echo, &ky, &kz)) ){
-			//debug_printf(DP_DEBUG3, "train=%ld\tte=%ld\tky=%ld\tkz=%d\n", train, te, ky, kz);
+			//debug_printf(DP_DEBUG3, "train=%ld\tte=%ld\tky=%ld\tkz=%d\n", train, echo, ky, kz);
 			if (ky != -1 && kz != -1 && echo >= echoes2skip) {
 
 				echo -= echoes2skip;
@@ -405,7 +455,7 @@ int vieworder_preprocess(const char* filename, bool header, unsigned int echoes2
 }
 
 
-void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, long view_dims[3], const long* ksp_views, const long* dab_views)
+void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, long view_dims[3], const long* ksp_views, const long* dab_views, const long* TR_idx)
 {
 
 	//debug_print_dims(DP_DEBUG1, 3, view_dims);
@@ -436,6 +486,7 @@ void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dim
 
 	long N = view_dims[0];
 	long T = ksp_dims[TE_DIM];
+	long R = ksp_dims[TIME_DIM];
 
 	md_clear(D, ksp_dims, ksp, CFL_SIZE);
 
@@ -474,15 +525,20 @@ void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dim
 
 					dat_pos[PHS2_DIM] = dab_views[view_idx / sizeof(long)];
 					ksp_pos[PHS2_DIM] = ksp_views[view_idx / sizeof(long)];
-
 					ksp_pos[TE_DIM] = echo;
+
+					if (NULL != TR_idx) {
+
+						assert(TR_idx[train] < R);
+						ksp_pos[TIME_DIM] = TR_idx[train];
+					}
 
 					if (skips_start == 1 && echo != 0)
 						ksp_pos[TE_DIM]--;
 
 					long copy_dims[D];
 
-					md_select_dims(D, ~(PHS1_FLAG | PHS2_FLAG | TE_FLAG), copy_dims, ksp_dims);
+					md_select_dims(D, ~(PHS1_FLAG | PHS2_FLAG | TE_FLAG | TIME_FLAG), copy_dims, ksp_dims);
 
 					long ksp_idx = md_calc_offset(D, ksp_strs, ksp_pos);
 					long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
@@ -565,6 +621,7 @@ void dat_from_views(unsigned int D, const long dat_dims[D], complex float* dat, 
 /**
  * ksp_dims: [1 Y Z C 1 T]
  * dat_dims: [1 Y Z C 1 1]
+ * T: echo train length
  */
 int dat_from_view_files(unsigned int D, const long dat_dims[D], complex float* dat, const long ksp_dims[D], const complex float* ksp, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file)
 {
@@ -589,14 +646,21 @@ int dat_from_view_files(unsigned int D, const long dat_dims[D], complex float* d
 
 
 /**
- * ksp_dims: [1 Y Z C 1 T]
- * dat_dims: [1 Y Z C 1 1]
+ * ksp_dims: [1 Y Z C 1 T 1 R]
+ * dat_dims: [1 Y Z C 1 1 1 1]
+ * T: echo train length
+ * R: number of TRs
  */
-int ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file)
+int ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file)
 {
 	long view_dims[3] = { Nmax, Tmax, 2 };
 	long* ksp_views = md_alloc(3, view_dims, sizeof(long));
 	long* dab_views = md_alloc(3, view_dims, sizeof(long));
+
+	// track TR value and index enumerating total number of unique TR vals
+	// actually don't care about TR value, but maybe it will be used in the future
+	long* TR_vals = NULL;
+	long* TR_idx = NULL;
 
 	assert(0 == skips_start || 1 == skips_start);
 
@@ -606,9 +670,21 @@ int ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* k
 	if (0 != vieworder_preprocess(dab_views_file, header, echoes2skip - skips_start, view_dims, dab_views))
 		return -1;
 
-	ksp_from_views(D, skips_start, ksp_dims, ksp, dat_dims, data, view_dims, ksp_views, dab_views);
+	if (NULL != TR_vals_file) {
+
+		TR_vals = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+		TR_idx = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+
+		if (0 != TR_vals_preprocess(TR_vals_file, header, Nmax, TR_vals, TR_idx))
+			return -1;
+	}
+
+	ksp_from_views(D, skips_start, ksp_dims, ksp, dat_dims, data, view_dims, ksp_views, dab_views, TR_idx);
+
 	md_free(ksp_views);
 	md_free(dab_views);
+	md_free(TR_vals);
+	md_free(TR_idx);
 
 	return 0;
 
@@ -661,7 +737,7 @@ int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], c
 		md_clear(D, te_dims, tmp_te, CFL_SIZE);
 		md_copy_block(D, pos, ksp1_dims, tmp1, dat_dims, data, CFL_SIZE);
 
-		ksp_from_views(D, 0, te_dims, tmp_te, ksp1_dims, tmp1, view_dims, ksp_views, dab_views);
+		ksp_from_views(D, 0, te_dims, tmp_te, ksp1_dims, tmp1, view_dims, ksp_views, dab_views, NULL);
 
 		weights = md_alloc(D, ksp1_dims, CFL_SIZE);
 		md_zwavg2_core1(D, te_dims, TE_FLAG, ksp1_str, weights, te_str, tmp_te);
@@ -684,7 +760,7 @@ int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], c
 
 		md_copy_block(D, pos1, ksp1_dims, ksp1, dat_dims, data, CFL_SIZE);
 
-		ksp_from_views(D, 0, te_dims, ksp_te, ksp1_dims, ksp1, view_dims, ksp_views, dab_views);
+		ksp_from_views(D, 0, te_dims, ksp_te, ksp1_dims, ksp1, view_dims, ksp_views, dab_views, NULL);
 
 		if (wavg)
 			md_zwavg2_core2(D, te_dims, TE_FLAG, ksp1_str, ksp1, weights, te_str, ksp_te);
@@ -785,6 +861,9 @@ int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex floa
 	}
 
 	cfksp_from_views(D, skips_start, cfksp_dims, cfksp, dat_dims, data, bas_dims, bas, view_dims, ksp_views, dab_views);
+
+	md_free(ksp_views);
+	md_free(dab_views);
 
 	return 0;
 
@@ -928,7 +1007,7 @@ int cfksp_pat_from_view_files(unsigned int D, const long cfksp_dims[D], complex 
 
 	estimate_pattern(D, single_ksp_dims, COIL_DIM, pat_flat, single_ksp);
 
-	if( 0 != ksp_from_view_files(D, pat_dims, pattern2, pat_flat_dims, pat_flat, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file)) {
+	if( 0 != ksp_from_view_files(D, pat_dims, pattern2, pat_flat_dims, pat_flat, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file, NULL)) {
 		error("Error executing ksp_from_view_files\n");
 	}
 

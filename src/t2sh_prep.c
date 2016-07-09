@@ -49,14 +49,17 @@ int main_t2sh_prep(int argc, char* argv[])
 	bool wavg = false;
 	bool avg = false;
 	bool proj = false;
+	bool varTR = false;
 
 	const char* basis_file = NULL;
 	const char* vieworder_sort_file = NULL;
 	const char* vieworder_dab_file = NULL;
+	const char* TR_vals_file = NULL;
 
 	unsigned int echoes2skip = 0;
 	unsigned int num_echoes = 0;
 	unsigned int K = 4;
+	unsigned int R = 1;
 
 
 	const struct opt_s opts[] = {
@@ -64,7 +67,9 @@ int main_t2sh_prep(int argc, char* argv[])
 		OPT_SET('w', &wavg, "Weighted average along time"),
 		OPT_SET('a', &avg, "average along time"),
 		OPT_STRING('b', &basis_file, "<file>", "Project onto basis in <file>"),
-		OPT_UINT('K', &K, "K", "Subspace size for -b (Default K=4)"),
+		OPT_STRING('r', &TR_vals_file, "<file>", "Variable TRs <file>"),
+		OPT_UINT('R', &R, "R", "Number of unique TR values [Default R=1]"),
+		OPT_UINT('K', &K, "K", "Subspace size for -b [Default K=4]"),
 	};
 
 	cmdline(&argc, argv, 6, 6, usage_str, help_str, ARRAY_SIZE(opts), opts);
@@ -72,6 +77,9 @@ int main_t2sh_prep(int argc, char* argv[])
 
 	if (NULL != basis_file)
 		proj = true;
+
+	if (NULL != TR_vals_file)
+		varTR = true;
 
 	if (proj && (wavg || avg))
 		error("Cannot project and average\n");
@@ -120,6 +128,9 @@ int main_t2sh_prep(int argc, char* argv[])
 	else if (!(wavg || avg))
 		ksp_dims[TE_DIM] = num_echoes;
 
+	if (varTR)
+		ksp_dims[TIME_DIM] = R;
+
 	complex float* ksp = create_cfl(argv[6], DIMS, ksp_dims);
 
 
@@ -141,7 +152,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	else {
 
 		// expand kspace into time bins and reorder data
-		if( 0 != ksp_from_view_files(DIMS, ksp_dims, ksp, dat_dims, dat, echoes2skip, 0, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_file, vieworder_dab_file))
+		if( 0 != ksp_from_view_files(DIMS, ksp_dims, ksp, dat_dims, dat, echoes2skip, 0, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_file, vieworder_dab_file, TR_vals_file))
 			error("Error executing ksp_from_view_files\n");
 	}
 

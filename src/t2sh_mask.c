@@ -7,9 +7,9 @@
  */
 
 
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <complex.h>
 #include <unistd.h>
 
@@ -20,28 +20,22 @@
 #include "misc/mri.h"
 #include "misc/misc.h"
 #include "misc/debug.h"
+#include "misc/opts.h"
 
 #ifndef CFL_SIZE
 #define CFL_SIZE sizeof(_Complex float)
 #endif
 
+#ifndef DIMS
+#define DIMS 16
+#endif
 
-static void usage(const char* name, FILE* fd)
-{
-	fprintf(fd, "Usage: %s [-s] <e2s> <ETL> <kspace> <vieworder_file> <vieworder_mask>\n", name);
-}
 
-static void help(const char* name, FILE *fd)
-{
-	usage(name, fd);
-	fprintf(fd,	"Compute temporal mask from vieworder file and match dimensions of kspace\n"
-			"\t<e2s>\techoes2skip\n"
-			"\t<ETL>\techo train length\n"
-			"\t-s\tfile does not contain the first (header) line\n" 
-		"\t-h\thelp\n");
-}
-//
-static int read_vieworder_file(char* filename, _Bool skip, unsigned int D, long dims[D], unsigned int echoes2skip, complex float* te_mask)
+static const char* usage_str = "<echoes2skip> <ETL> <kspace> <vieworder_file> <mask>";
+static const char* help_str = "Compute temporal mask from vieworder file and match dimensions of kspace.";
+
+
+static int read_vieworder_file(char* filename, bool skip, unsigned int D, long dims[D], unsigned int echoes2skip, complex float* te_mask, long TR_idx[MAX_TRAINS])
 {
 	FILE *fd;
 	char line_buffer[BUFSIZ];
@@ -96,50 +90,33 @@ int main_t2sh_mask(int argc, char* argv[])
 {
 	num_init();
 
-	int c;
-	_Bool skip = false;
 
-	while (-1 != (c = getopt(argc, argv, "hs"))) {
+	bool skip = false;
 
-		switch (c) {
 
-		case 's':
-			skip = true;
-			break;
+	const struct opt_s opts[] = {
 
-		case 'h':
-			help(argv[0], stdout);
-			exit(0);
+		OPT_SET('s', &skip, "Files have no header\n"),
+	};
 
-		default:
-			help(argv[0], stderr);
-			exit(1);
-		}
-	}
-
-	if (argc - optind != 5) {
-
-		fprintf(stderr, "Input arguments do not match expected format.\n");
-		usage(argv[0], stderr);
-		exit(1);
-	}
+	cmdline(&argc, argv, 5, 5, usage_str, help_str, ARRAY_SIZE(opts), opts);
 
 	unsigned int D = DIMS;
 	long in_dims[D];
 	long out_dims[D];
 
-	int echoes2skip = atoi(argv[optind + 0]);
-	int T = atoi(argv[optind + 1]);
+	unsigned int echoes2skip = atoi(argv[1]);
+	unsigned int T = atoi(argv[2]);
 	
-	complex float* kspace = load_cfl(argv[optind + 2], D, in_dims);
+	complex float* kspace = load_cfl(argv[3], D, in_dims);
 
 	md_select_dims(D, (PHS1_FLAG | PHS2_FLAG), out_dims, in_dims);
 	out_dims[TE_DIM] = T;
 	
-	complex float* te_mask = create_cfl(argv[optind + 4], D, out_dims);
+	complex float* te_mask = create_cfl(argv[5], D, out_dims);
 	md_clear(D, out_dims, te_mask, CFL_SIZE);
 
-	if (0 != read_vieworder_file(argv[optind + 3], skip, D, out_dims, echoes2skip, te_mask))
+	if (0 != read_vieworder_file(argv[4], skip, D, out_dims, echoes2skip, te_mask))
 		error("read_vieworder_file failed\n");
 
 	unmap_cfl(D, in_dims, kspace);

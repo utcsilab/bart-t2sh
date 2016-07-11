@@ -3,6 +3,7 @@
 # Additional targets
 TOPT= t2sh_pics t2sh_proj t2sh_mask t2sh_prep t2sh_scale
 MODULES_t2sh_prep = -ljtsense -lsense -liter -llinops
+MODULES_t2sh_mask = -ljtsense
 MODULES_t2sh_scale = -ljtsense -lsense -llinops -liter
 MODULES_t2sh_pics = -lgrecon -ljtsense -lsense -lwavelet2 -llowrank -liter -llinops
 MODULES_bart += -ljtsense

@@ -22,6 +22,8 @@
 #include "misc/debug.h"
 #include "misc/opts.h"
 
+#include "jtsense/jtrecon.h"
+
 #ifndef CFL_SIZE
 #define CFL_SIZE sizeof(_Complex float)
 #endif
@@ -60,19 +62,24 @@ static int read_vieworder_file(char* filename, bool skip, unsigned int D, long d
 	md_set_dims(D, mask_pos, 0);
 
 	long trash;
+	long train;
 	int i;
 
 	//debug_printf(DP_DEBUG3, "dims = \n");
 	//debug_print_dims(DP_DEBUG3, D, dims);
 	while (fgets(line_buffer, sizeof(line_buffer), fd)) {
 
-		if (5 == (i = sscanf(line_buffer, "%ld %ld %ld %ld %ld \n", &trash, &trash, &mask_pos[TE_DIM], &mask_pos[PHS1_DIM], &mask_pos[PHS2_DIM])) ){
+		if (5 == (i = sscanf(line_buffer, "%ld %ld %ld %ld %ld \n", &trash, &train, &mask_pos[TE_DIM], &mask_pos[PHS1_DIM], &mask_pos[PHS2_DIM])) ){
 			
-			//debug_printf(DP_DEBUG3, "te = %ld\tky=%ld\tkz=%d\n", mask_pos[TE_DIM], mask_pos[PHS1_DIM], mask_pos[PHS2_DIM]);
+			//debug_printf(DP_DEBUG3, "te=%ld\tky=%ld\tkz=%ld\ttrain=%ld\n", mask_pos[TE_DIM], mask_pos[PHS1_DIM], mask_pos[PHS2_DIM], train);
 
 			if (mask_pos[PHS1_DIM] != -1 && mask_pos[PHS2_DIM] != -1 && mask_pos[TE_DIM] >= echoes2skip) {
 
 				mask_pos[TE_DIM] -= echoes2skip;
+
+				if ((NULL != TR_idx) && TR_idx[train] != -1)
+					mask_pos[TIME_DIM] = TR_idx[train];
+
 				long idx = md_calc_offset(D, strs, mask_pos);
 				te_mask[idx / CFL_SIZE] = 1.;
 			}
@@ -86,20 +93,33 @@ static int read_vieworder_file(char* filename, bool skip, unsigned int D, long d
 	return 0;
 }
 
+
 int main_t2sh_mask(int argc, char* argv[])
 {
 	num_init();
 
+	long Nmax = MAX_TRAINS;
 
 	bool skip = false;
+	bool varTR = false;
 
+	const char* TR_vals_file = NULL;
+	long* TR_vals = NULL;
+	long* TR_idx = NULL;
+
+	unsigned int R = 1;
 
 	const struct opt_s opts[] = {
 
 		OPT_SET('s', &skip, "Files have no header\n"),
+		OPT_STRING('r', &TR_vals_file, "<file>", "Variable TRs <file>"),
+		OPT_UINT('R', &R, "R", "Number of unique TR values [Default R=1]"),
 	};
 
 	cmdline(&argc, argv, 5, 5, usage_str, help_str, ARRAY_SIZE(opts), opts);
+
+	if (NULL != TR_vals_file)
+		varTR = true;
 
 	unsigned int D = DIMS;
 	long in_dims[D];
@@ -112,12 +132,25 @@ int main_t2sh_mask(int argc, char* argv[])
 
 	md_select_dims(D, (PHS1_FLAG | PHS2_FLAG), out_dims, in_dims);
 	out_dims[TE_DIM] = T;
+	out_dims[TIME_DIM] = R;
+
+	if (varTR) {
+
+		TR_vals = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+		TR_idx = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+
+		if (0 != TR_vals_preprocess(TR_vals_file, skip, Nmax, TR_vals, TR_idx))
+			error("TR_vals_preprocess failed!");
+	}
 	
 	complex float* te_mask = create_cfl(argv[5], D, out_dims);
 	md_clear(D, out_dims, te_mask, CFL_SIZE);
 
-	if (0 != read_vieworder_file(argv[4], skip, D, out_dims, echoes2skip, te_mask))
+	if (0 != read_vieworder_file(argv[4], skip, D, out_dims, echoes2skip, te_mask, TR_idx))
 		error("read_vieworder_file failed\n");
+
+	md_free(TR_vals);
+	md_free(TR_idx);
 
 	unmap_cfl(D, in_dims, kspace);
 	unmap_cfl(D, out_dims, te_mask);

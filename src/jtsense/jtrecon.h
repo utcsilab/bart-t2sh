@@ -14,7 +14,6 @@ extern "C" {
 
 #define MAX_TRAINS 1000
 #define MAX_ECHOES 500
-#define MAX_TRs 1000
 
 
 /**

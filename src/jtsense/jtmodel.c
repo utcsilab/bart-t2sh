@@ -201,9 +201,11 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	PTR_ALLOC(struct stkern_data, data);
 
 	// FIXME this is very very slow on GPU
-	// FIXME does not work if pattern differs across CSHIFT dim
 	complex float* stkern_mat = md_alloc(DIMS, stkern_dims, CFL_SIZE);
 	create_stkern_mat(stkern_mat, pat_dims, pattern, bas_dims, basis);
+#if 0
+	dump_cfl("stkern_mat", DIMS, stkern_dims, stkern_mat);
+#endif
 
 #ifdef USE_CUDA
 	complex float* gpu_stkern_mat = NULL;
@@ -296,7 +298,9 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 
 	data->sense_op = sense_op;
 
-	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG | CSHIFT_FLAG), data->cfksp_dims, max_dims);
+	// FIXME: make the select_dims take the inverse flags, so that it doesn't need to
+	// change each time a new dim gets used
+	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG | CSHIFT_FLAG | TIME_FLAG), data->cfksp_dims, max_dims);
 
 #ifdef USE_CUDA
 	data->cfksp = (use_gpu ? md_alloc_gpu : md_alloc)(DIMS, data->cfksp_dims, CFL_SIZE);
@@ -306,8 +310,11 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 #endif
 
 	long stkern_dims[DIMS];
-	md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG | COEFF_FLAG | CSHIFT_FLAG), stkern_dims, max_dims);
+	md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG | COEFF_FLAG | CSHIFT_FLAG | TIME_FLAG), stkern_dims, max_dims);
 	stkern_dims[TE_DIM] = stkern_dims[COEFF_DIM];
+
+	debug_printf(DP_DEBUG3, "stkern_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, stkern_dims);
 
 	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims, use_gpu);
 	data->stkern_op = stkern_op;

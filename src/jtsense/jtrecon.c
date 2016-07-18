@@ -646,8 +646,8 @@ int dat_from_view_files(unsigned int D, const long dat_dims[D], complex float* d
 
 
 /**
- * ksp_dims: [1 Y Z C 1 T 1 R]
- * dat_dims: [1 Y Z C 1 1 1 1]
+ * ksp_dims: [1 Y Z C 1 T 1 1 1 R]
+ * dat_dims: [1 Y Z C 1 1 1 1 1 1]
  * T: echo train length
  * R: number of TRs
  */
@@ -692,16 +692,25 @@ int ksp_from_view_files(unsigned int D, const long ksp_dims[D], complex float* k
 
 
 /**
- * ksp_dims: [X Y Z C 1 1]
+ * ksp_dims: [X Y Z C 1 1 1 1 1 R]
  * dat_dims: [X Y Z C 1 1]
+ * R: number of TRs
  */
-int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file)
+int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file)
 {
+	//FIXME: in the future, make the [w]avg take flags for the dimensions to average
+	// typical use case: flags = TE_FLAG | CSHIFT_FLAG | TIME_FLAG
+	
 	long view_dims[3] = { Nmax, Tmax, 2 };
 	long* ksp_views = md_alloc(3, view_dims, sizeof(long));
 	long* dab_views = md_alloc(3, view_dims, sizeof(long));
 
-	assert(md_check_compat(D, 0u, ksp_dims, dat_dims));
+	assert(md_check_compat(D, TIME_FLAG, ksp_dims, dat_dims));
+
+	// track TR value and index enumerating total number of unique TR vals
+	// actually don't care about TR value, but maybe it will be used in the future
+	long* TR_vals = NULL;
+	long* TR_idx = NULL;
 
 	if (0 != vieworder_preprocess(ksp_views_file, header, echoes2skip, view_dims, ksp_views))
 		return -1;
@@ -709,41 +718,58 @@ int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], c
 	if (0 != vieworder_preprocess(dab_views_file, header, echoes2skip, view_dims, dab_views))
 		return -1;
 
-	// [1 Y Z C 1 T ...]
-	long te_dims[D];
-	md_select_dims(D, ~READ_FLAG, te_dims, ksp_dims);
-	te_dims[TE_DIM] = T;
+	if (NULL != TR_vals_file) {
 
-	// [1 Y Z C 1 1 ...]
+		TR_vals = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+		TR_idx = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+
+		if (0 != TR_vals_preprocess(TR_vals_file, header, Nmax, TR_vals, TR_idx))
+			return -1;
+	}
+
+	// [1 Y Z C 1 T ... R]
+	long teksp_dims[D];
+	md_select_dims(D, ~READ_FLAG, teksp_dims, ksp_dims);
+	teksp_dims[TE_DIM] = T;
+
+	// [1 Y Z C 1 1 ... 1]
+	long dat1_dims[D];
+	md_select_dims(D, ~READ_FLAG, dat1_dims, dat_dims);
+
+	// [1 Y Z C 1 1 ... R]
 	long ksp1_dims[D];
 	md_select_dims(D, ~READ_FLAG, ksp1_dims, ksp_dims);
 
 	long pos[D];
 	md_set_dims(D, pos, 0);
 
+	long teksp_str[D];
+	md_calc_strides(D, teksp_str, teksp_dims, CFL_SIZE);
+
+	long dat1_str[D];
+	md_calc_strides(D, dat1_str, dat1_dims, CFL_SIZE);
+
 	long ksp1_str[D];
 	md_calc_strides(D, ksp1_str, ksp1_dims, CFL_SIZE);
 
-	long te_str[D];
-	md_calc_strides(D, te_str, te_dims, CFL_SIZE);
 
 	complex float* weights = NULL;
 	if (wavg) {
 
 		// manually copy the 0th slice to initialize weights
-		complex float* tmp_te = md_alloc(D, te_dims, CFL_SIZE);
-		complex float* tmp1 = md_alloc(D, ksp1_dims, CFL_SIZE);
+		complex float* tmp_teksp = md_alloc(D, teksp_dims, CFL_SIZE);
+		complex float* tmp_dat1 = md_alloc(D, dat1_dims, CFL_SIZE);
 
-		md_clear(D, te_dims, tmp_te, CFL_SIZE);
-		md_copy_block(D, pos, ksp1_dims, tmp1, dat_dims, data, CFL_SIZE);
+		md_clear(D, teksp_dims, tmp_teksp, CFL_SIZE);
+		md_copy_block(D, pos, dat1_dims, tmp_dat1, dat_dims, data, CFL_SIZE);
 
-		ksp_from_views(D, 0, te_dims, tmp_te, ksp1_dims, tmp1, view_dims, ksp_views, dab_views, NULL);
+		ksp_from_views(D, 0, teksp_dims, tmp_teksp, dat1_dims, tmp_dat1, view_dims, ksp_views, dab_views, TR_idx);
 
 		weights = md_alloc(D, ksp1_dims, CFL_SIZE);
-		md_zwavg2_core1(D, te_dims, TE_FLAG, ksp1_str, weights, te_str, tmp_te);
+		md_zwavg2_core1(D, teksp_dims, TE_FLAG, ksp1_str, weights, teksp_str, tmp_teksp);
 
-		md_free(tmp_te);
-		md_free(tmp1);
+		md_free(tmp_teksp);
+		md_free(tmp_dat1);
 	}
 
 	int counter = 0;
@@ -751,25 +777,27 @@ int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], c
 #pragma omp parallel for
 	for (long i = 0; i < ksp_dims[READ_DIM]; i++) {
 
-		complex float* ksp_te = md_alloc(D, te_dims, CFL_SIZE);
+		complex float* teksp1 = md_alloc(D, teksp_dims, CFL_SIZE);
+		complex float* dat1 = md_alloc(D, dat1_dims, CFL_SIZE);
 		complex float* ksp1 = md_alloc(D, ksp1_dims, CFL_SIZE);
 
 		long pos1[D];
 		md_set_dims(D, pos1, 0);
 		pos1[READ_DIM] = i;
 
-		md_copy_block(D, pos1, ksp1_dims, ksp1, dat_dims, data, CFL_SIZE);
+		md_copy_block(D, pos1, dat1_dims, dat1, dat_dims, data, CFL_SIZE);
 
-		ksp_from_views(D, 0, te_dims, ksp_te, ksp1_dims, ksp1, view_dims, ksp_views, dab_views, NULL);
+		ksp_from_views(D, 0, teksp_dims, teksp1, dat1_dims, dat1, view_dims, ksp_views, dab_views, TR_idx);
 
 		if (wavg)
-			md_zwavg2_core2(D, te_dims, TE_FLAG, ksp1_str, ksp1, weights, te_str, ksp_te);
+			md_zwavg2_core2(D, teksp_dims, TE_FLAG, ksp1_str, ksp1, weights, teksp_str, teksp1);
 		else
-			md_zavg2(D, te_dims, TE_FLAG, ksp1_str, ksp1, te_str, ksp_te);
+			md_zavg2(D, teksp_dims, TE_FLAG, ksp1_str, ksp1, teksp_str, teksp1);
 
 		md_copy_block(D, pos1, ksp_dims, ksp, ksp1_dims, ksp1, CFL_SIZE);
 
-		md_free(ksp_te);
+		md_free(teksp1);
+		md_free(dat1);
 		md_free(ksp1);
 
 #pragma omp critical
@@ -781,16 +809,23 @@ int avg_ksp_from_view_files(unsigned int D, bool wavg, const long ksp_dims[D], c
 
 	md_free(ksp_views);
 	md_free(dab_views);
+	md_free(TR_vals);
+	md_free(TR_idx);
 
 	return 0;
 }
 
 
-int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex float* cfksp, const long dat_dims[D], const complex float* data, const long bas_dims[D], const complex float* bas, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file)
+int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex float* cfksp, const long dat_dims[D], const complex float* data, const long bas_dims[D], const complex float* bas, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file)
 {
 	long view_dims[3] = { Nmax, Tmax, 2 };
 	long* ksp_views = md_alloc(3, view_dims, sizeof(long));
 	long* dab_views = md_alloc(3, view_dims, sizeof(long));
+
+	// track TR value and index enumerating total number of unique TR vals
+	// actually don't care about TR value, but maybe it will be used in the future
+	long* TR_vals = NULL;
+	long* TR_idx = NULL;
 
 	if (0 != vieworder_preprocess(ksp_views_file, header, echoes2skip - skips_start, view_dims, ksp_views))
 		return -1;
@@ -798,11 +833,23 @@ int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex floa
 	if (0 != vieworder_preprocess(dab_views_file, header, echoes2skip - skips_start, view_dims, dab_views))
 		return -1;
 
+	if (NULL != TR_vals_file) {
+
+		TR_vals = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+		TR_idx = md_alloc(1, MD_DIMS(Nmax), sizeof(long));
+
+		if (0 != TR_vals_preprocess(TR_vals_file, header, Nmax, TR_vals, TR_idx))
+			return -1;
+	}
+
 	assert(skips_start == 0 || skips_start == 1);
 
 	if (skips_start == 1) { 
 		// we want to merge the first echoes, but there may be duplicates. We need to zero out any duplicates (would be
 		// better to average...)
+
+		// FIXME: untested for varTR
+		debug_printf(DP_WARN, "skips_start untested for variable TR!\n");
 
 		long view_strs[3];
 
@@ -860,10 +907,12 @@ int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex floa
 		}
 	}
 
-	cfksp_from_views(D, skips_start, cfksp_dims, cfksp, dat_dims, data, bas_dims, bas, view_dims, ksp_views, dab_views);
+	cfksp_from_views(D, skips_start, cfksp_dims, cfksp, dat_dims, data, bas_dims, bas, view_dims, ksp_views, dab_views, TR_idx);
 
 	md_free(ksp_views);
 	md_free(dab_views);
+	md_free(TR_vals);
+	md_free(TR_idx);
 
 	return 0;
 
@@ -874,13 +923,14 @@ int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], complex floa
  * Implements Phi^H P y without first expanding (zero-filling) y into the time dimension
  * @param cfksp output coefficient kspace
  */
-void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp_dims[D], complex float* cfksp, const long dat_dims[D], const complex float* data, const long bas_dims[D], const complex float* bas, long view_dims[3], const long* ksp_views, const long* dab_views)
+void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp_dims[D], complex float* cfksp, const long dat_dims[D], const complex float* data, const long bas_dims[D], const complex float* bas, long view_dims[3], const long* ksp_views, const long* dab_views, const long* TR_idx)
 {
 
 #if 0
 	assert(view_dims[1] == ksp_dims[TE_DIM]);
 #endif
 	assert(view_dims[2] == 2);
+	assert(skips_start == 0 || skips_start == 1);
 
 	long cfksp_strs[D];
 	long dat_strs[D];
@@ -906,8 +956,7 @@ void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp
 
 	long N = view_dims[0];
 	long T = bas_dims[TE_DIM];
-
-	assert(skips_start == 0 || skips_start == 1);
+	long R = cfksp_dims[TIME_DIM];
 
 	md_clear(D, cfksp_dims, cfksp, CFL_SIZE);
 
@@ -947,9 +996,15 @@ void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp
 				dat_pos[PHS2_DIM] = dab_views[view_idx / sizeof(long)];
 				cfksp_pos[PHS2_DIM] = ksp_views[view_idx / sizeof(long)];
 
+				if (NULL != TR_idx) {
+
+					assert(TR_idx[train] < R);
+					cfksp_pos[TIME_DIM] = TR_idx[train];
+				}
+
 				long copy_dims[D];
 
-				md_select_dims(D, ~(PHS1_FLAG | PHS2_FLAG | TE_FLAG), copy_dims, cfksp_dims);
+				md_select_dims(D, ~(PHS1_FLAG | PHS2_FLAG | TE_FLAG | TIME_FLAG), copy_dims, cfksp_dims);
 
 				long cfksp_idx = md_calc_offset(D, cfksp_strs, cfksp_pos);
 				long dat_idx = md_calc_offset(D, dat_strs, dat_pos);
@@ -987,7 +1042,7 @@ int cfksp_pat_from_view_files(unsigned int D, const long cfksp_dims[D], complex 
 	assert(skips_start == 0 || skips_start == 1);
 
 	// compute compact cfksp directly from view files
-	if ( 0 != cfksp_from_view_files(D, cfksp_dims, cfksp, dat_dims, data, phi_dims, phi, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file))
+	if ( 0 != cfksp_from_view_files(D, cfksp_dims, cfksp, dat_dims, data, phi_dims, phi, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file, NULL))
 		error("Error executing cfksp_from_view_files\n");
 
 	md_free(phi);

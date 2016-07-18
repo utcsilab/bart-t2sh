@@ -138,7 +138,7 @@ int main_t2sh_prep(int argc, char* argv[])
 
 		// expand kspace into subspace, reorder data
 		debug_printf(DP_INFO, "calling cfksp \n");
-		if( 0 != cfksp_from_view_files(DIMS, ksp_dims, ksp, dat_dims, dat, bas_dims, basis, echoes2skip, 0, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_file, vieworder_dab_file))
+		if( 0 != cfksp_from_view_files(DIMS, ksp_dims, ksp, dat_dims, dat, bas_dims, basis, echoes2skip, 0, true, MAX_TRAINS, MAX_ECHOES, vieworder_sort_file, vieworder_dab_file, TR_vals_file))
 			error("Error executing cfksp_from_view_files\n");
 		debug_printf(DP_INFO, "done\n");
 
@@ -146,7 +146,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	else if (wavg || avg) {
 
 		// expand kspace into time bins, reorder data, and average
-		if( 0 != avg_ksp_from_view_files(DIMS, wavg, ksp_dims, ksp, dat_dims, dat, echoes2skip, true, MAX_TRAINS, MAX_ECHOES, num_echoes, vieworder_sort_file, vieworder_dab_file))
+		if( 0 != avg_ksp_from_view_files(DIMS, wavg, ksp_dims, ksp, dat_dims, dat, echoes2skip, true, MAX_TRAINS, MAX_ECHOES, num_echoes, vieworder_sort_file, vieworder_dab_file, TR_vals_file))
 			error("Error executing avg_ksp_from_view_files\n");
 	}
 	else {

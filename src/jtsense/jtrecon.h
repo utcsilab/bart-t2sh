@@ -62,11 +62,11 @@ extern void ksp_from_views(unsigned int D, unsigned int skips_start, const long 
 
 extern int ksp_from_view_files(unsigned int D, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, unsigned int skips_start, _Bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file);
 
-extern int avg_ksp_from_view_files(unsigned int D, _Bool wavg, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, _Bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file);
+extern int avg_ksp_from_view_files(unsigned int D, _Bool wavg, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, _Bool header, long Nmax, long Tmax, long T, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file);
 
-extern void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp_dims[D], _Complex float* cfksp, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, long view_dims[3], const long* ksp_views, const long* dab_views);
+extern void cfksp_from_views(unsigned int D, unsigned int skips_start, const long cfksp_dims[D], _Complex float* cfksp, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, long view_dims[3], const long* ksp_views, const long* dab_views, const long* TR_idx);
 
-extern int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], _Complex float* cfksp, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file);
+extern int cfksp_from_view_files(unsigned int D, const long cfksp_dims[D], _Complex float* cfksp, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file);
 
 extern int cfksp_pat_from_view_files(unsigned int D, const long cfksp_dims[D], _Complex float* cfksp, const long pat_dims[D], _Complex float* pattern, const long dat_dims[D], const _Complex float* data, const long bas_dims[D], const _Complex float* bas, unsigned int K, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file);
 

@@ -29,7 +29,7 @@
 #include "linops/someops.h"
 #include "linops/grad.h"
 #include "linops/sum.h"
-#include "linops/rvc.h"
+#include "linops/realval.h"
 
 #include "iter/iter.h"
 #include "iter/iter2.h"
@@ -343,8 +343,8 @@ int main_t2sh_pics(int argc, char* argv[])
 
 	if (rvc) {
 
-		struct linop_s* rvc_op = rvc_create(DIMS, cfimg_dims);
-		struct linop_s* tmp_op = linop_chain(sense_op, rvc_op);
+		struct linop_s* rvc_op = linop_realval_create(DIMS, cfimg_dims);
+		struct linop_s* tmp_op = linop_chain(rvc_op, sense_op);
 
 		linop_forward(rvc_op, DIMS, cfimg_dims, cfimg, DIMS, cfimg_dims, cfimg);
 

@@ -27,7 +27,6 @@
 
 #include "linops/linop.h"
 #include "linops/someops.h"
-#include "linops/rvc.h"
 #include "linops/sampling.h"
 #include "linops/optest.h"
 #include "linops/grad.h"

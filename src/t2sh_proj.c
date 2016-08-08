@@ -78,6 +78,11 @@ int main_t2sh_proj(int argc, char* argv[])
 
 		md_select_dims(DIMS, ~COEFF_FLAG, out_dims, in_dims);
 
+		for (unsigned int i = 0; i < DIMS; i++) {
+			if ((1 == out_dims[i]) && (bas_dims[i] > 1) && (i != COEFF_DIM))
+				out_dims[i] = bas_dims[i];
+		}
+
 		if (-1 != single_TE)
 			out_dims[TE_DIM] = 1;
 		else
@@ -85,7 +90,15 @@ int main_t2sh_proj(int argc, char* argv[])
 	}
 	else {
 
-		md_select_dims(DIMS, ~TE_FLAG, out_dims, in_dims);
+		// if basis has extra dimensions, they should also be squashed
+		unsigned int flags = 0u;
+		for (unsigned int i = 0; i < DIMS; i++) {
+
+			if ((bas_dims[i] > 1) && (i != COEFF_DIM))
+				flags = MD_SET(flags, i);
+		}
+
+		md_select_dims(DIMS, ~flags, out_dims, in_dims);
 		out_dims[COEFF_DIM] = K;
 	}
 

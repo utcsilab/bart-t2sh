@@ -646,6 +646,38 @@ int dat_from_view_files(unsigned int D, const long dat_dims[D], complex float* d
 
 
 /**
+ * Reshape the multiple TRs and echo times into a single concatenated dimension
+ * ksp_cat_dims: [1 Y Z C 1 T*R 1 1 1 1]
+ * ksp_dims:     [1 Y Z C 1  T  1 1 1 R]
+ */
+static void reshape_ksp_varTR(unsigned int D, const long ksp_cat_dims[D], complex float* ksp_cat, const long ksp_dims[D], const complex float* ksp)
+{
+	long T = ksp_dims[TE_DIM];
+	long R = ksp_dims[TIME_DIM];
+
+	assert(T*R == ksp_cat_dims[TE_DIM]);
+	assert(1 == ksp_cat_dims[TIME_DIM]);
+
+	md_copy(D, ksp_dims, ksp_cat, ksp, CFL_SIZE);
+}
+
+
+int ksp_varTR_from_view_files(unsigned int D, const long ksp_cat_dims[D], const long ksp_dims[D], complex float* ksp, const long dat_dims[D], const complex float* data, unsigned int echoes2skip, unsigned int skips_start, bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file)
+{
+	complex float* ksp_tmp = md_alloc_sameplace(D, ksp_dims, CFL_SIZE, ksp);
+
+	if (0 != ksp_from_view_files(D, ksp_dims, ksp_tmp, dat_dims, data, echoes2skip, skips_start, header, Nmax, Tmax, ksp_views_file, dab_views_file, TR_vals_file))
+		return -1;
+
+	reshape_ksp_varTR(D, ksp_cat_dims, ksp, ksp_dims, ksp_tmp);
+
+	md_free(ksp_tmp);
+
+	return 0;
+}
+
+
+/**
  * ksp_dims: [1 Y Z C 1 T 1 1 1 R]
  * dat_dims: [1 Y Z C 1 1 1 1 1 1]
  * T: echo train length

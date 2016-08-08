@@ -58,6 +58,8 @@ extern int vieworder_preprocess(const char* filename, _Bool header, unsigned int
 
 extern int TR_vals_preprocess(const char* filename, const _Bool header, const long Nmax, long* TR_vals, long* TR_idx);
 
+extern int ksp_varTR_from_view_files(unsigned int D, const long ksp_cat_dims[D], const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, unsigned int skips_start, _Bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file);
+
 extern void ksp_from_views(unsigned int D, unsigned int skips_start, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, long view_dims[3], const long* ksp_views, const long* dab_views, const long* TR_idx);
 
 extern int ksp_from_view_files(unsigned int D, const long ksp_dims[D], _Complex float* ksp, const long dat_dims[D], const _Complex float* data, unsigned int echoes2skip, unsigned int skips_start, _Bool header, long Nmax, long Tmax, const char* ksp_views_file, const char* dab_views_file, const char* TR_vals_file);

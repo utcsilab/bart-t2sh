@@ -31,6 +31,7 @@
 #include "linops/optest.h"
 #include "linops/grad.h"
 
+#include "misc/types.h"
 #include "misc/io.h"
 #include "misc/mmio.h"
 #include "misc/misc.h"
@@ -69,7 +70,7 @@ struct data {
 
 struct t2sh_data {
 
-	operator_data_t base;
+	INTERFACE(operator_data_t);
 
 	const struct jtsense_conf* conf;
 
@@ -88,6 +89,8 @@ struct t2sh_data {
 
 	bool use_gpu;
 };
+
+DEF_TYPEID(t2sh_data);
 
 
 static void jtsense_recon(const struct jtsense_conf* conf, _Complex float* cfimg,
@@ -115,14 +118,13 @@ static void jtsense_recon_gpu(const struct jtsense_conf* conf, _Complex float* c
 
 static void jtsense_del(const operator_data_t* _data)
 {
-	const struct t2sh_data* data = CONTAINER_OF(_data, const struct t2sh_data, base);
-	free((void*)data);
+	xfree(CAST_DOWN(t2sh_data, _data));
 }
 
 
 static void jtsense_apply(const operator_data_t* _data, unsigned int N, void* args[N])
 {
-	struct t2sh_data* data = CONTAINER_OF(_data, struct t2sh_data, base);
+	struct t2sh_data* data = CAST_DOWN(t2sh_data, _data);
 
 	assert(2 == N);
 
@@ -157,6 +159,7 @@ const struct operator_s* operator_t2sh_pics_create(struct jtsense_conf* conf,
 	// initialize data: struct to hold all data and operators
 
 	PTR_ALLOC(struct t2sh_data, data);
+	SET_TYPEID(t2sh_data, data);
 
 	data->conf = conf;
 	data->italgo = italgo;
@@ -169,7 +172,7 @@ const struct operator_s* operator_t2sh_pics_create(struct jtsense_conf* conf,
 	data->cfimg_truth = cfimg_truth;
 	data->use_gpu = use_gpu;
 
-	return operator_create(linop_domain(E_op)->N, linop_domain(E_op)->dims, linop_domain(E_op)->N, linop_codomain(E_op)->dims, &data->base, jtsense_apply, jtsense_del);
+	return operator_create(linop_domain(E_op)->N, linop_domain(E_op)->dims, linop_domain(E_op)->N, linop_codomain(E_op)->dims, CAST_UP(PTR_PASS(data)), jtsense_apply, jtsense_del);
 
 }
 
@@ -273,8 +276,11 @@ static void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 		float objval = jtsense_objective((void*)data, (const float*)cfimg);
 		debug_printf(DP_DEBUG2, "OBJVAL = %f\n", objval);
 	}
+	
+	//FIXME: add new iter_monitor_s interface back in
+	UNUSED(cfimg_truth);
 
-	lsqr2(DIMS, &lsqr_conf, italgo, iconf, data->E_op, data->num_prox_funs, data->prox_funs, data->G_ops, linop_domain(data->E_op)->dims, cfimg, linop_codomain(data->E_op)->dims, cfksp, NULL, cfimg_truth, conf->fast ? NULL : data, conf->fast ? NULL : jtsense_objective);
+	lsqr2(DIMS, &lsqr_conf, italgo, iconf, data->E_op, data->num_prox_funs, data->prox_funs, data->G_ops, linop_domain(data->E_op)->dims, cfimg, linop_codomain(data->E_op)->dims, cfksp, NULL, NULL);
 
 	// -----------------------------------------------------------
 	// cleanup

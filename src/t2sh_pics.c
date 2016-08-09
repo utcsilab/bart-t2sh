@@ -375,8 +375,9 @@ int main_t2sh_pics(int argc, char* argv[])
 
 	italgo_fun2_t italgo = iter2_call_iter;
 	struct iter_call_s iter2_data;
+	SET_TYPEID(iter_call_s, &iter2_data);
 
-	void* iconf = &iter2_data;
+	iter_conf* iconf = CAST_UP(&iter2_data);
 
 	struct iter_conjgrad_conf cgconf;
 	struct iter_fista_conf fsconf;
@@ -444,7 +445,7 @@ int main_t2sh_pics(int argc, char* argv[])
 			mmconf.RELTOL = 0.;
 
 			italgo = iter2_admm;
-			iconf = &mmconf;
+			iconf = CAST_UP(&mmconf);
 
 			break;
 

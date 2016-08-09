@@ -272,10 +272,14 @@ static void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 	// -----------------------------------------------------------
 	// call iterative algorithm interface
 
+#if 0
 	if (!conf->fast) {
 		float objval = jtsense_objective((void*)data, (const float*)cfimg);
 		debug_printf(DP_DEBUG2, "OBJVAL = %f\n", objval);
 	}
+#else
+	UNUSED(jtsense_objective);
+#endif
 	
 	//FIXME: add new iter_monitor_s interface back in
 	UNUSED(cfimg_truth);

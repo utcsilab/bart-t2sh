@@ -432,11 +432,13 @@ int main_t2sh_pics(int argc, char* argv[])
 			mmconf = iter_admm_defaults;
 			mmconf.maxiter = maxiter;
 			mmconf.maxitercg = admm_maxitercg;
+			mmconf.cg_eps = 1.E-5;
+			mmconf.mu = 2;
 			mmconf.rho = admm_rho;
 			mmconf.hogwild = hogwild;
+			mmconf.dynamic_rho = !hogwild;
 			mmconf.fast = conf.fast;
 			mmconf.do_warmstart = warm_start;
-			//		mmconf.dynamic_rho = true;
 			mmconf.ABSTOL = 0.;
 			mmconf.RELTOL = 0.;
 

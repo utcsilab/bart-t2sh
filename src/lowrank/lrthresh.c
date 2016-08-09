@@ -69,6 +69,7 @@ static struct lrthresh_data_s* lrthresh_create_data(const long dims_decom[DIMS],
 static void lrthresh_free_data(const operator_data_t* data);
 static void lrthresh_apply(const operator_data_t* _data, float lambda, complex float* dst, const complex float* src);
 
+static void lrthresh_applyX(const operator_data_t* _data, float lambda, complex float* dst, const complex float* src);
 
 
 /**
@@ -260,6 +261,28 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 	}
 }
 
+
+static void lrthresh_applyX(const operator_data_t* _data, float mu, complex float* dst, const complex float* src)
+{
+	struct lrthresh_data_s* data = CAST_DOWN(lrthresh_data_s, _data);
+
+	complex float* tmp = md_alloc_sameplace(DIMS, data->dims, CFL_SIZE, src);
+	complex float* tmp2 = md_alloc_sameplace(DIMS, data->dims, CFL_SIZE, src);
+	md_clear(DIMS, data->dims, tmp2, CFL_SIZE);
+
+	int num_avs = 10;
+
+	for (int i = 0; i < num_avs; i++) {
+
+		lrthresh_apply(_data, mu, tmp, src);
+		md_zaxpy(DIMS, data->dims, tmp2, 1. / num_avs, tmp);
+	}
+
+	md_copy(DIMS, data->dims, dst, tmp2, CFL_SIZE);
+
+	md_free(tmp);
+	md_free(tmp2);
+}
 
 
 /*

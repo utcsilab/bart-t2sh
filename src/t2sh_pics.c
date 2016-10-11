@@ -258,7 +258,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 		cfimg_truth = load_cfl(cfimg_truth_file, DIMS, cfimg_truth_dims);
 
-		if (md_check_compat(DIMS, 0u, cfimg_dims, cfimg_truth_dims))
+		if (!md_check_compat(DIMS, 0u, cfimg_dims, cfimg_truth_dims))
 			error("Truth image dimensions not compatible with output!\n");
 
 		if (scaling != 0.)
@@ -273,7 +273,7 @@ int main_t2sh_pics(int argc, char* argv[])
 		debug_printf(DP_DEBUG1, "Warm start: %s\n", cfimg_start_file);
 		cfimg_start = load_cfl(cfimg_start_file, DIMS, cfimg_start_dims);
 
-		if (md_check_compat(DIMS, 0u, cfimg_dims, cfimg_start_dims))
+		if (!md_check_compat(DIMS, 0u, cfimg_dims, cfimg_start_dims))
 			error("Initial (warm start) image dimensions not compatible with output!\n");
 
 		md_copy(DIMS, cfimg_dims, cfimg, cfimg_start, CFL_SIZE);

@@ -65,15 +65,18 @@ static int read_vieworder_file(char* filename, bool skip, unsigned int D, long d
 	long train;
 	int i;
 
-	//debug_printf(DP_DEBUG3, "dims = \n");
+	long max_TE = dims[TE_DIM];
+
+	//debug_printf(DP_DEBUG2, "dims = \n");
 	//debug_print_dims(DP_DEBUG3, D, dims);
+
 	while (fgets(line_buffer, sizeof(line_buffer), fd)) {
 
 		if (5 == (i = sscanf(line_buffer, "%ld %ld %ld %ld %ld \n", &trash, &train, &mask_pos[TE_DIM], &mask_pos[PHS1_DIM], &mask_pos[PHS2_DIM])) ){
 			
 			//debug_printf(DP_DEBUG3, "te=%ld\tky=%ld\tkz=%ld\ttrain=%ld\n", mask_pos[TE_DIM], mask_pos[PHS1_DIM], mask_pos[PHS2_DIM], train);
 
-			if (mask_pos[PHS1_DIM] != -1 && mask_pos[PHS2_DIM] != -1 && mask_pos[TE_DIM] >= echoes2skip) {
+			if (mask_pos[PHS1_DIM] != -1 && mask_pos[PHS2_DIM] != -1 && mask_pos[TE_DIM] >= echoes2skip && mask_pos[TE_DIM] < max_TE + echoes2skip) {
 
 				mask_pos[TE_DIM] -= echoes2skip;
 

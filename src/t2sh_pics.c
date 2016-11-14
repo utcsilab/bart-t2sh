@@ -92,6 +92,9 @@ int main_t2sh_pics(int argc, char* argv[])
 	const char* cfimg_start_file = NULL;
 	bool warm_start = false;
 
+	const char* stkern_file = NULL;
+	bool use_stkern_file = false;
+
 	unsigned int maxiter = 50;
 	bool randshift = true;
 	bool hogwild = false;
@@ -120,6 +123,7 @@ int main_t2sh_pics(int argc, char* argv[])
 		OPT_SET('F', &conf.fast, "fast"),
 		OPT_STRING('T', &cfimg_truth_file, "file", "truth file"),
 		OPT_STRING('W', &cfimg_start_file, "<img>", "Warm start with <img>"),
+		OPT_STRING('S', &stkern_file, "<stkern>", "Use precomputed stkern mat <stkern>"),
 		OPT_FLOAT('u', &admm_rho, "rho", "ADMM rho"),
 		OPT_UINT('C', &admm_maxitercg, "iter", "ADMM max. CG iterations"),
 		OPT_SELECT('m', enum algo_t, &ropts.algo, ADMM, "\tSelect ADMM"),
@@ -144,6 +148,9 @@ int main_t2sh_pics(int argc, char* argv[])
 
 	if (NULL != cfimg_start_file)
 		warm_start = true;
+
+	if (NULL != stkern_file)
+		use_stkern_file = true;
 
 	if (-1 != gpun)
 		use_gpu = true;
@@ -286,6 +293,13 @@ int main_t2sh_pics(int argc, char* argv[])
 	}
 
 
+	long stkern_dims[DIMS];
+	complex float* stkern_mat = NULL;
+
+	if (use_stkern_file)
+		stkern_mat = load_cfl(stkern_file, DIMS, stkern_dims);
+
+
 	// -----------------------------------------------------------
 	// print options and statistics
 
@@ -354,7 +368,14 @@ int main_t2sh_pics(int argc, char* argv[])
 		sense_op = tmp_op;
 	}
 
-	const struct linop_s* forward_op = jtmodel_init(max_dims, sense_op, pat_dims, pattern, basis_dims, basis, use_gpu);
+	const struct linop_s* forward_op = jtmodel_init(max_dims, sense_op, pat_dims, pattern, basis_dims, basis, use_stkern_file ? stkern_mat : NULL, use_gpu);
+
+	if (use_stkern_file) {
+
+		free((void*)stkern_file);
+		unmap_cfl(DIMS, stkern_dims, stkern_mat);
+	}
+
 
 
 	// -----------------------------------------------------------

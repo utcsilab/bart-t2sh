@@ -196,7 +196,8 @@ static void stkern_del(const operator_data_t* _data)
 
 static const struct operator_s* stkern_init(const long pat_dims[DIMS], const complex float* pattern,
 		const long bas_dims[DIMS], const complex float* basis,
-		long stkern_dims[DIMS], long cfksp_dims[DIMS],
+		long stkern_dims[DIMS], const complex float* stkern_mat,
+		long cfksp_dims[DIMS],
 		bool use_gpu)
 {
 
@@ -204,26 +205,32 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	PTR_ALLOC(struct stkern_data, data);
 	SET_TYPEID(stkern_data, data);
 
-	// FIXME this is very very slow on GPU
-	complex float* stkern_mat = md_alloc(DIMS, stkern_dims, CFL_SIZE);
-	create_stkern_mat(stkern_mat, pat_dims, pattern, bas_dims, basis);
+	complex float* stkern_mat2 = md_alloc(DIMS, stkern_dims, CFL_SIZE);
+
+	if (NULL != stkern_mat)
+		md_copy(DIMS, stkern_dims, stkern_mat2, stkern_mat, CFL_SIZE);
+	else {
+
+		// FIXME this is very very slow on GPU
+		create_stkern_mat(stkern_mat2, pat_dims, pattern, bas_dims, basis);
 #if 0
-	dump_cfl("stkern_mat", DIMS, stkern_dims, stkern_mat);
+		dump_cfl("stkern_mat", DIMS, stkern_dims, stkern_mat2);
 #endif
+	}
 
 #ifdef USE_CUDA
-	complex float* gpu_stkern_mat = NULL;
-	if (use_gpu) {
+		complex float* gpu_stkern_mat = NULL;
+		if (use_gpu) {
 
-		gpu_stkern_mat = md_gpu_move(DIMS, stkern_dims, stkern_mat, CFL_SIZE);
-		md_free(stkern_mat);
-		stkern_mat = gpu_stkern_mat;
-	}
+			gpu_stkern_mat = md_gpu_move(DIMS, stkern_dims, stkern_mat2, CFL_SIZE);
+			md_free(stkern_mat2);
+			stkern_mat2 = gpu_stkern_mat;
+		}
 #else
-	assert(!use_gpu);
+		assert(!use_gpu);
 #endif
 
-	data->stkern_mat = stkern_mat;
+	data->stkern_mat = stkern_mat2;
 
 	md_copy_dims(DIMS, data->stkern_dims, stkern_dims);
 	md_copy_dims(DIMS, data->cfksp_dims, cfksp_dims);
@@ -293,6 +300,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const struct linop_s* sense_op,
 		const long pat_dims[DIMS], const complex float* pattern,
 		const long bas_dims[DIMS], const complex float* basis,
+		const complex float* stkern_mat,
 		bool use_gpu)
 {
 
@@ -319,7 +327,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 	debug_printf(DP_DEBUG3, "stkern_dims =\t");
 	debug_print_dims(DP_DEBUG3, DIMS, stkern_dims);
 
-	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, data->cfksp_dims, use_gpu);
+	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, stkern_mat, data->cfksp_dims, use_gpu);
 	data->stkern_op = stkern_op;
 
 	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, CAST_UP(data), jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);

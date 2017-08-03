@@ -284,7 +284,7 @@ static void jtsense_recon(const struct jtsense_conf* conf, complex float* cfimg,
 	//FIXME: add new iter_monitor_s interface back in
 	UNUSED(cfimg_truth);
 
-	lsqr2(DIMS, &lsqr_conf, italgo, iconf, data->E_op, data->num_prox_funs, data->prox_funs, data->G_ops, linop_domain(data->E_op)->dims, cfimg, linop_codomain(data->E_op)->dims, cfksp, NULL, NULL);
+	lsqr2(DIMS, &lsqr_conf, italgo, iconf, (float*)cfimg, data->E_op, data->num_prox_funs, data->prox_funs, data->G_ops, linop_domain(data->E_op)->dims, cfimg, linop_codomain(data->E_op)->dims, cfksp, NULL, NULL);
 
 	// -----------------------------------------------------------
 	// cleanup

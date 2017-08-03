@@ -74,7 +74,7 @@ void lad2(	unsigned int N, const struct lad_conf* conf,
 
 		// solve weighted least-squares
 
-		wlsqr2(N, conf->lsqr_conf, italgo, iconf, model_op,
+		wlsqr2(N, conf->lsqr_conf, italgo, iconf, (const float*)x, model_op,
 				1, prox_funs, prox_linops,
 		       x_dims, x, y_dims, y, w_dims, weights, NULL);
 	}

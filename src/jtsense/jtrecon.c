@@ -177,30 +177,30 @@ const struct operator_s* operator_t2sh_pics_create(struct jtsense_conf* conf,
 }
 
 
-float jt_estimate_scaling(const long cfksp_dims[DIMS], const complex float* sens, const complex float* data)
+float jt_estimate_scaling(const long ksp_dims[DIMS], const long flags, const complex float* sens, const complex float* data)
 {
-	assert(1 == cfksp_dims[MAPS_DIM]);
-
-	long cfimg_dims[DIMS];
-	md_select_dims(DIMS, ~(COIL_FLAG), cfimg_dims, cfksp_dims);
-
-	long str[DIMS];
-	md_calc_strides(DIMS, str, cfimg_dims, CFL_SIZE);
-
-	complex float* tmp = md_alloc(DIMS, cfimg_dims, CFL_SIZE);
-
-	if (NULL == sens)
-		rss_combine(cfksp_dims, tmp, data);
-	else
-		optimal_combine(cfksp_dims, 0., tmp, sens, data);
+	assert(1 == ksp_dims[MAPS_DIM]);
 
 	long img_dims[DIMS];
-	md_select_dims(DIMS, ~(COEFF_FLAG), img_dims, cfimg_dims);
+	md_select_dims(DIMS, ~COIL_FLAG, img_dims, ksp_dims);
 
-	complex float* tmpnorm = md_alloc(DIMS, img_dims, CFL_SIZE);
-	md_zrss(DIMS, cfimg_dims, COEFF_FLAG, tmpnorm, tmp);
+	long str[DIMS];
+	md_calc_strides(DIMS, str, img_dims, CFL_SIZE);
 
-	size_t imsize = (size_t)md_calc_size(DIMS, img_dims);
+	complex float* tmp = md_alloc(DIMS, img_dims, CFL_SIZE);
+
+	if (NULL == sens)
+		rss_combine(ksp_dims, tmp, data);
+	else
+		optimal_combine(ksp_dims, 0., tmp, sens, data);
+
+	long rss_dims[DIMS];
+	md_select_dims(DIMS, ~flags, rss_dims, img_dims);
+
+	complex float* tmpnorm = md_alloc(DIMS, rss_dims, CFL_SIZE);
+	md_zrss(DIMS, img_dims, flags, tmpnorm, tmp);
+
+	size_t imsize = (size_t)md_calc_size(DIMS, rss_dims);
 
 	float scale = estimate_scaling_norm(1., imsize, tmpnorm, false);
 

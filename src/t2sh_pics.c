@@ -243,7 +243,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 
 	if (scaling == 0.)
-		scaling = jt_estimate_scaling(cfksp_dims, NULL, cfksp);
+		scaling = jt_estimate_scaling(cfksp_dims, COEFF_FLAG, NULL, cfksp);
 	else {
 
 		if (scaling <= 0.)

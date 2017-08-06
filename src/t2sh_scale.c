@@ -61,7 +61,7 @@ int main_t2sh_scale(int argc, char* argv[])
 	if (4 == argc)
 		do_output = true;
 
-	float scaling = jt_estimate_scaling(dims, NULL, in_data);
+	float scaling = jt_estimate_scaling(dims, TE_FLAG | COEFF_FLAG, NULL, in_data);
 
 	if (do_scale) {
 

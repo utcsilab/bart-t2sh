@@ -36,7 +36,7 @@ typedef float (*obj_fun_t)(const struct linop_s*, const struct operator_p_s*, co
 
 extern const struct jtsense_conf jtsense_defaults;
 
-extern float jt_estimate_scaling(const long dims[DIMS], const _Complex float* sens, const _Complex float* data);
+extern float jt_estimate_scaling(const long dims[DIMS], const long flags, const _Complex float* sens, const _Complex float* data);
 
 
 struct linop_s;

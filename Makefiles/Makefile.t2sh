@@ -1,7 +1,7 @@
 # BART Makefile for T2 Shuffling recon
 
 # Additional targets
-TOPT= t2sh_pics t2sh_proj t2sh_mask t2sh_prep t2sh_scale
+TOPT= t2sh_pics t2sh_proj t2sh_mask t2sh_prep t2sh_scale t2sh_gen_mask
 MODULES_t2sh_prep = -ljtsense -lsense -liter -llinops
 MODULES_t2sh_mask = -ljtsense
 MODULES_t2sh_scale = -ljtsense -lsense -llinops -liter

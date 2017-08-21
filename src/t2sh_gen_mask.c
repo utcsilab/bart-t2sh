@@ -1508,11 +1508,21 @@ static void orderviews_kr_mineddy1(
 
 	/* approx accel to get num_trains in each mask */
 	fudge = 1.1;
+#if 0
 	accel = sqrtf( (float)yres * (float)zres * m_pi / (4 * fudge * num_trains * num_echoes) );
 
 	if (dbg_kr)
 		printf("[DBG_KR] vdpoisson scheme. accel = %f\n", accel);
+#else
+	float y_accel = (float)yres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes));
+	float z_accel = (float)zres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes));
+	accel = y_accel * z_accel;
 
+	if (dbg_kr) {
+
+		printf("[DBG_KR] vdpoisson scheme. accel = %f, yaccel=%f, zaccel=%f\n", accel, y_accel, z_accel);
+	}
+#endif
 
 	csmask = (int*)malloc( yres*zres * sizeof(int) );
 	yfov = 300.;
@@ -1521,7 +1531,7 @@ static void orderviews_kr_mineddy1(
 
 
 	/* generate poisson mask until we have at least num_trains * num_echoes points */
-	num_points = regenVDPoissonSampling(num_trains * num_echoes, csmask, yfov, zfov, yres, zres, accel, accel, cal_size,
+	num_points = regenVDPoissonSampling(num_trains * num_echoes, csmask, yfov, zfov, yres, zres, y_accel, z_accel, cal_size,
 			cut_corners, ran_seed++, my_sampling_pattern, my_partial_fourier);
 
 	if (dbg_kr)

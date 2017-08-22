@@ -1623,12 +1623,15 @@ static void orderviews_kr_mineddy1(
 #if 0
 	accel = sqrtf( (float)yres * (float)zres * m_pi / (4 * fudge * num_trains * num_echoes) );
 
+	float y_accel = accel;
+	float z_accel = accel;
+
 	if (dbg_kr)
 		printf("[DBG_KR] vdpoisson scheme. accel = %f\n", accel);
 #else
-	float y_accel = (float)yres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes));
-	float z_accel = (float)zres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes));
-	accel = y_accel * z_accel;
+	float y_accel = (float)zres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes)); 
+	float z_accel = (float)yres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes));
+	accel = sqrtf(y_accel * z_accel);
 
 	if (dbg_kr) {
 

@@ -32,6 +32,12 @@
 #define SUCCESS 0
 #define FAILURE -1
 
+#define ACQ_FULL       0
+#define ACQ_ELLIPSE    1
+#define CAL_CROSS      0
+#define CAL_BOX        1
+#define CAL_ELLIPSE    2
+
 #define VIEW_ORDER_R_ECLIPSE 9
 
 bool dbg_kr = false;
@@ -1370,6 +1376,112 @@ static int regenVDPoissonSampling(int num_trains, int *csmask, float yfov, float
 }
 
 
+static bool select_views(
+    int    yres,           /* I */
+    int    zres,           /* I */
+    int    ystride,        /* I */
+    int    zstride,        /* I */
+    int    ycal,           /* I */
+    int    zcal,           /* I */
+    int    yover,          /* I */  
+    int    zover,          /* I */  
+    int    acq_shape,      /* I */
+    int    cal_shape,      /* I */
+    float* y_list,         /* O */
+    float* z_list,         /* O */
+    int*   num_views,      /* O */
+    int*   tmparc_syn_pts, /* O */
+    float* R               /* O */
+    )
+{
+    int   y, z;
+    int   yend, zend;  /* changed from start to end : 02-May-07 */ 
+    float ycenter = yres/2 - 0.5;  /* changed from "+" to "-" because indexing starts at 0 now : 03-May-07 */
+    float zcenter = zres/2 - 0.5;  /* changed from "+" to "-" because indexing starts at 0 now : 03-May-07 */
+    int   views_within_mask = 0;
+    int   view_count        = 0;
+    int   within_mask;
+    int   on_y_grid, on_z_grid, on_grid;
+    int   within_y_cal, within_z_cal, within_cal;
+    int   acquire_view;
+    int   tmp_arc_pts = 0; /*tmp var to hold # of pts to be synthesized by ARC */ 
+
+    /* -1 because indexing starts at 0 now : 03-May-07 */
+    if (yover==0)  /* full ky */
+        yend = yres - 1;
+    else           /* partial ky */
+        yend = yres/2 + yover - 1;
+
+    if (zover==0)  /* full kz */
+        zend = zres - 1;
+    else           /* partial kz */
+        zend = zres/2 + zover - 1;
+    
+    /* indexing starts at 0 now : 03-May-07 */
+    for (z=0; z<=zend; z++) {      
+        for (y=0; y<=yend; y++) {
+
+            /* is view within mask? */
+            if (ACQ_FULL == acq_shape)
+                within_mask = 1;
+            else
+                within_mask = pow( (y-ycenter)/(yres/2), 2) + pow( (z-zcenter)/(zres/2), 2) <= 1;
+
+            /* count views within mask */
+            if (within_mask) {
+                views_within_mask = views_within_mask + 1;
+            }
+
+            /* is view on accelerated grid? */
+            on_y_grid = y % ystride==0;
+            on_z_grid = z % zstride==0;
+            on_grid   = on_y_grid && on_z_grid;
+
+            /* is view within cal? */
+            within_y_cal = fabs(y-ycenter)<(ycal/2);
+            within_z_cal = fabs(z-zcenter)<(zcal/2);
+            if (CAL_BOX == cal_shape)      
+                within_cal = within_y_cal && within_z_cal;
+            else if (CAL_ELLIPSE == cal_shape) 
+                within_cal = pow( (y-ycenter)/(ycal/2), 2) + pow( (z-zcenter)/(zcal/2), 2) <= 1;
+
+            /* determine if view is acquired */
+            if (CAL_CROSS == cal_shape) { 
+                acquire_view = within_mask && (on_y_grid || within_y_cal) && (on_z_grid || within_z_cal);
+            } else if (CAL_BOX == cal_shape || CAL_ELLIPSE == cal_shape){            
+                acquire_view = within_mask && (on_grid || within_cal);
+            }
+
+            if (within_mask && !acquire_view)
+            {
+                tmp_arc_pts++;
+            }
+
+            /* debug */
+            if (0) printf("view=%d y=%d z=%d acquire=%d within_mask=%d on_y_grid=%d within_y_cal=%d on_z_grid=%d within_z_cal=%d \n", 
+                             view_count, y, z, acquire_view, within_mask, on_y_grid, within_y_cal, on_z_grid, within_z_cal);
+
+            /* count and assign views that are acquired */
+            if (acquire_view) {
+                y_list[view_count] = y;
+                z_list[view_count] = z;
+
+                /* debug */
+                if (0) printf("view=%d y=%0.0f z=%0.0f\n", view_count, y_list[view_count], z_list[view_count]);
+
+                view_count = view_count + 1;
+            }
+
+        }  /* for y */
+    }  /* for z */
+
+    *R = (float)views_within_mask / view_count;
+    *num_views = view_count;
+    *tmparc_syn_pts = tmp_arc_pts;
+
+    return SUCCESS;
+}
+
 static void orderviews_kr_mineddy2(
 		int* mask,
 		int* B,
@@ -2278,6 +2390,8 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 	int encode_flag = 8;
 	float axis_ratio = 1.;
 
+	bool fully_sampled = false;
+
 	const struct opt_s opts[] = {
 
 		OPT_UINT('Y', &yres, "size", "size dimension 1"),
@@ -2293,6 +2407,7 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 		OPT_UINT('s', &skips_start, "E2S", "echoes to skip"),
 		OPT_UINT('T', &num_trains, "trains", "number of echo trains"),
 		OPT_UINT('E', &num_echoes, "ETL", "echo train length"),
+		OPT_SET('F', &fully_sampled, "fully sampled -- overrides num_trains"),
 	};
 
 	cmdline(&argc, argv, 1, 1, usage_str, help_str, ARRAY_SIZE(opts), opts);
@@ -2300,10 +2415,17 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 	num_init();
 	num_rand_init(ran_seed);
 
+	if (fully_sampled) {
+
+		num_trains = (yres * zres * M_PI / 4.) / num_echoes;
+		debug_printf(DP_DEBUG1, "fully sampled. num_trains = %d\n", num_trains);
+	}
+
 	long num_views = num_trains * num_echoes;
+	debug_printf(DP_DEBUG1, "num_views=%d ny*nz=%d\n", num_views, yres*zres);
 
 	assert(kr_min_eddy != 1); // deprecated
-	assert(num_trains * num_echoes < yres * zres);
+	assert(num_views < (yres * zres * M_PI / 4.));
 
 	for (long i = 0; i < MAX_SIZE; i++) {
 		y_list[i] = -1;
@@ -2314,12 +2436,15 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 		z_sort_dab[i] = -1;
 	}
 
+	float ycenter = yres / 2 - 0.5;
+	float zcenter = zres / 2 - 0.5;
 	long c = 0;
 	for (long ky = 0; ky < yres; ky++) {
 
 		for (long kz = 0; kz < zres; kz++) {
 
-			if (c < num_views) {
+			bool within_mask = pow((ky - ycenter) / (yres / 2), 2) + pow((kz - zcenter) / (zres / 2), 2) <= 1;
+			if (c < num_views && within_mask) {
 				y_list[c] = ky;
 				z_list[c] = kz;
 				c++;
@@ -2327,7 +2452,7 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 		}
 	}
 
-	orderviews_r_helper( num_views, num_trains, num_echoes, skips_start,
+	orderviews_r_helper(num_views, num_trains, num_echoes, skips_start,
 			yres, zres, echo_dir, encode_flag, axis_ratio,
 			y_list, z_list, y_sort_dab, z_sort_dab, y_sort, z_sort, ran_seed);
 

@@ -886,24 +886,30 @@ static int kr_cal_e2s(int mode, int num_trains, int skips_start, int num_echoes,
 
 	/* first make a calibration region with num_trains points, and assign to the first echo */
 	train = 0;
+	bool flag = false;
 	for (i = 0; i < yres; i++) {
 
-		if (train >= num_trains)
+		if (flag)
 			break;
 
 		for (j = 0; j < zres; j++) {
 
-			if ((abs(i - cy) <= sqrt(num_trains * (float)yres / (float)zres) / 2) &&
-					(abs(j - cz) <= sqrt(num_trains * (float)zres / (float)yres) / 2)) {
-				y_sort[train*num_echoes + 0] = i;
-				z_sort[train*num_echoes + 0] = j;
+			if (!flag) {
+				if ((abs(i - cy) <= sqrt(num_trains * (float)yres / (float)zres) / 2) &&
+						(abs(j - cz) <= sqrt(num_trains * (float)zres / (float)yres) / 2)) {
+					y_sort[train*num_echoes + 0] = i;
+					z_sort[train*num_echoes + 0] = j;
 
-				mask[j * zres + i] = 1;
+					mask[j * zres + i] = 1;
 
-				py = i;
-				pz = j;
+					py = i;
+					pz = j;
 
-				train++;
+					train++;
+
+					if (train >= num_trains)
+						flag = true;
+				}
 			}
 		}
 	}

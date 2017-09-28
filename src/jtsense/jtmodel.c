@@ -238,8 +238,9 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	float* stkern_mat_trans = md_alloc(DIMS, stkern_dims, FL_SIZE);
 
 	// Transpose 4x4 matrices and set to float
-	int nimg = bas_dims[COEFF_DIM];
-	for(int img = 0 ; img < nimg*nimg ; img++)
+	int ncoeff = bas_dims[COEFF_DIM];
+
+	for(int img = 0 ; img < ncoeff*ncoeff ; img++)
 	{
 		complex float * nontrans = stkern_mat3 + img * dim0 * dim1;
 		float * trans = stkern_mat_trans + img * dim0 * dim1;
@@ -315,8 +316,6 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
 
 	int dim0 = data->sens_dims[PHS1_DIM];
 	int dim1 = data->sens_dims[PHS2_DIM];
-	int nmaps = data->sens_dims[COIL_DIM];
-	int nimg = data->cfksp_dims[COEFF_DIM];
 
 	if (data->plan1d_0 == NULL) {
 
@@ -331,7 +330,7 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
 		md_free(tmp2);
 	}
 
-	jtmodel_normal_benchmark_fast(data->sens, sdata->stkern_mat_trans, dst, src, dim0, dim1, nmaps, nimg, data->plan1d_0, data->plan1d_inv_0, data->plan1d_1, data->plan1d_inv_1, NULL, 32, dim0);
+	jtmodel_normal_benchmark_fast(data->cfimg_dims, data->sens_dims, data->sens, sdata->stkern_mat_trans, dst, src, data->plan1d_0, data->plan1d_inv_0, data->plan1d_1, data->plan1d_inv_1, 32, dim0);
 
 }
 

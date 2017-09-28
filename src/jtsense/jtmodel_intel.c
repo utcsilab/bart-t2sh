@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "misc/misc.h"
+#include "misc/debug.h"
 
 #include "jtmodel_intel.h"
 
@@ -26,7 +27,7 @@ static void panel_forward(const complex float *restrict map0, const complex floa
 		complex float *_tmppanel0 = tmppanel0 + dim0 * row;
 		complex float *_tmppanel1 = tmppanel1 + dim0 * row;
 
-#pragma simd
+		//#pragma simd
 		for (int i = 0; i < dim0; i++) {
 			_tmppanel0[i] = (_map0[i] * _img0[i] + _map1[i] * _img1[i]) * sc;
 		}
@@ -34,7 +35,7 @@ static void panel_forward(const complex float *restrict map0, const complex floa
 	}
 	// Transpose
 	for (int col = 0; col < dim0; col++) {
-#pragma simd
+		//#pragma simd
 		for (int row = 0; row < m; row++) {
 			cor_out[row + col * dim1] = tmppanel1[col + row * dim0];
 		}
@@ -59,7 +60,7 @@ static void panel_forward3(complex float *a, complex float *b, complex float *co
 	}
 	// Transpose
 	for (int row = 0; row < dim1; row++) {
-#pragma simd
+		//#pragma simd
 		for (int col = 0; col < m; col++) {
 			cor_out[col + row * dim0] = b[row + col * dim1];
 		}
@@ -83,7 +84,7 @@ static void panel_forward4(const complex float *map0, const complex float *map1,
 		complex float *_cor0 = cor0 + row * dim0;
 		complex float *_cor1 = cor1 + row * dim0;
 		fftwf_execute_dft(plan, _tmpimg0, _tmpimg1);
-#pragma simd
+		//#pragma simd
 		for (int i = 0; i < dim0; i++) {
 			float r0 = __real__ _map0[i];
 			float r1 = __real__ _map1[i];
@@ -97,23 +98,24 @@ static void panel_forward4(const complex float *map0, const complex float *map1,
 	}
 }
 
-void jtmodel_normal_benchmark_fast(
-		const complex float *sens, const float *stkern_mat, 
-		complex float *dst, const complex float *src,
-		const unsigned long dim0, const unsigned long dim1,
-		const unsigned long nmaps, const unsigned long nimg,
+void jtmodel_normal_benchmark_fast(const long cfimg_dims[DIMS],
+		const long sens_dims[DIMS], const complex float *sens,
+		const float *stkern_mat, complex float *dst, const complex float *src,
 		fftwf_plan plan1d, fftwf_plan plan1d_inv, fftwf_plan plan1d_1, fftwf_plan plan1d_inv_1,
-		complex float * tst, unsigned int M, unsigned int N) {
+		unsigned int M, unsigned int N) {
 
-	UNUSED(tst);
+	const unsigned long dim0 = cfimg_dims[PHS1_DIM];
+	const unsigned long dim1 = cfimg_dims[PHS2_DIM];
+	const unsigned long ncoils = sens_dims[COIL_DIM];
+	const unsigned long ncoeffs = cfimg_dims[COEFF_DIM];
 
-	complex float *cfksp0 = (complex float *)malloc(dim1 * dim0 * nmaps * nimg *
+	complex float *cfksp0 = (complex float *)malloc(dim1 * dim0 * ncoils * ncoeffs *
 			sizeof(complex float)); // 28
-	complex float *cfksp1 = (complex float *)malloc(dim1 * dim0 * nmaps * nimg *
+	complex float *cfksp1 = (complex float *)malloc(dim1 * dim0 * ncoils * ncoeffs *
 			sizeof(complex float)); // 28
-	complex float *cfksp2 = (complex float *)malloc(dim1 * dim0 * nmaps * nimg *
+	complex float *cfksp2 = (complex float *)malloc(dim1 * dim0 * ncoils * ncoeffs *
 			sizeof(complex float)); // 28
-	complex float *cfksp3 = (complex float *)malloc(dim1 * dim0 * nmaps * nimg *
+	complex float *cfksp3 = (complex float *)malloc(dim1 * dim0 * ncoils * ncoeffs *
 			sizeof(complex float)); // 28
 
 	complex float *tmpimg =
@@ -127,13 +129,13 @@ void jtmodel_normal_benchmark_fast(
 	unsigned int P0 = (dim0 + M-1) / M;
 
 	float sc = 1.0 / sqrt((double)dim0 * dim1);
-	for (unsigned int map = 0; map < nmaps; map++) {
-		for (unsigned int img = 0; img < nimg; img++) {
+	for (unsigned int map = 0; map < ncoils; map++) {
+		for (unsigned int img = 0; img < ncoeffs; img++) {
 			for (unsigned int p = 0; p < P; p++) {
 				int rownum = ((p+1)*M > dim1) ? dim1-p*M: M;
 				const complex float *map0 = sens + map * dim1 * dim0 + p * M * N;
 				const complex float *map1 =
-					sens + map * dim1 * dim0 + nmaps * dim0 * dim1 + p * M * N;
+					sens + map * dim1 * dim0 + ncoils * dim0 * dim1 + p * M * N;
 				const complex float *img0 = src + img * dim0 * dim1 * 2 + p * M * N;
 				const complex float *img1 =
 					src + dim0 * dim1 + img * dim0 * dim1 * 2 + p * M * N;
@@ -145,28 +147,28 @@ void jtmodel_normal_benchmark_fast(
 				unsigned int rownum = ((p+1)*M > dim0) ? dim0-p*M: M;
 				complex float *_tmpimg = tmpimg + p * M * dim1;
 				complex float *cor_out =
-					cfksp3 + map * dim1 * dim0 + img * nmaps * dim1 * dim0 + p * M * dim1;
+					cfksp3 + map * dim1 * dim0 + img * ncoils * dim1 * dim0 + p * M * dim1;
 				panel_forward2(_tmpimg, cor_out, plan1d_1, rownum, dim0, dim1);
 			}
 		}
 
 
-		// stkern (nimg x nimg matrix multiplication)
+		// stkern (ncoeffs x ncoeffs matrix multiplication)
 		for (unsigned int pix_i = 0; pix_i < dim0; pix_i++) {
-			for (unsigned int img_i = 0; img_i < nimg; img_i++) {
+			for (unsigned int img_i = 0; img_i < ncoeffs; img_i++) {
 				complex float *img_out = cfksp2 + map * dim1 * dim0 +
-					img_i * dim0 * dim1 * nmaps + pix_i * dim1;
-#pragma simd
+					img_i * dim0 * dim1 * ncoils + pix_i * dim1;
+				//#pragma simd
 				for (unsigned int pix = 0; pix < dim1; pix++) {
 					img_out[pix] = 0;
 				}
-				for (unsigned int img_j = 0; img_j < nimg; img_j++) {
+				for (unsigned int img_j = 0; img_j < ncoeffs; img_j++) {
 					const complex float *img_in = cfksp3 + map * dim1 * dim0 +
-						img_j * dim0 * dim1 * nmaps + pix_i * dim1;
-					const float *mat = (img_i > img_j) ? stkern_mat + img_i * dim1 * dim0 + img_j * dim1 * dim0 * nimg + pix_i * dim1 :
-						stkern_mat + img_j * dim1 * dim0 + img_i * dim1 * dim0 * nimg + pix_i * dim1;
+						img_j * dim0 * dim1 * ncoils + pix_i * dim1;
+					const float *mat = (img_i > img_j) ? stkern_mat + img_i * dim1 * dim0 + img_j * dim1 * dim0 * ncoeffs + pix_i * dim1 :
+						stkern_mat + img_j * dim1 * dim0 + img_i * dim1 * dim0 * ncoeffs + pix_i * dim1;
 
-#pragma simd
+					//#pragma simd
 					for (unsigned int pix = 0; pix < dim1; pix++) {
 						img_out[pix] += img_in[pix] * mat[pix];
 					}
@@ -175,14 +177,14 @@ void jtmodel_normal_benchmark_fast(
 		}
 
 
-		const complex float *map0 = sens + map * dim1 * dim0; // + img*nmaps*dim0*dim1*2;
+		const complex float *map0 = sens + map * dim1 * dim0; // + img*ncoils*dim0*dim1*2;
 		const complex float *map1 = sens + map * dim1 * dim0 +
-			nmaps * dim0 * dim1; // + img*nmaps*dim0*dim1*2;
-		for (unsigned int img = 0; img < nimg; img++) {
+			ncoils * dim0 * dim1; // + img*ncoils*dim0*dim1*2;
+		for (unsigned int img = 0; img < ncoeffs; img++) {
 			for (unsigned int p = 0; p < P0; p++) {
 				int rownum = ((p+1)*M > dim0) ? dim0-p*M: M;
 				complex float *img_in =
-					cfksp2 + map * dim1 * dim0 + img * dim0 * dim1 * nmaps + p * M * dim1;
+					cfksp2 + map * dim1 * dim0 + img * dim0 * dim1 * ncoils + p * M * dim1;
 				complex float *tmpimg0 = tmpimg + p * M;
 
 				panel_forward3(img_in, tmppanel0, tmpimg0, plan1d_inv_1, rownum, dim0, dim1);
@@ -196,7 +198,7 @@ void jtmodel_normal_benchmark_fast(
 				const complex float *_map1 = map1 + p * M * N;
 				complex float *tmpimg0 = tmpimg + p * M * N;
 				if (map == 0) {
-#pragma simd
+					//#pragma simd
 					for (unsigned int pix = 0; pix < rownum * N; pix++) {
 						cor0[pix] = 0;
 						cor1[pix] = 0;
@@ -219,8 +221,8 @@ int main(int argc, char *argv[]) {
 #pragma omp parallel
 	{
 		// Create matrices
-		unsigned long nmaps = 7;
-		unsigned long nimg = 4;
+		unsigned long ncoils = 7;
+		unsigned long ncoeffs = 4;
 
 		assert(argc==4);
 		unsigned long dim0 = atoi(argv[1]);
@@ -229,21 +231,21 @@ int main(int argc, char *argv[]) {
 		printf("dim0, dim1, m,  %d %d %d\n", dim0, dim1, m);
 
 		complex float *src =
-			(complex float *)malloc(dim0 * dim1 * 2 * nimg * sizeof(complex float));
+			(complex float *)malloc(dim0 * dim1 * 2 * ncoeffs * sizeof(complex float));
 		complex float *dst =
-			(complex float *)malloc(dim0 * dim1 * 2 * nimg * sizeof(complex float));
+			(complex float *)malloc(dim0 * dim1 * 2 * ncoeffs * sizeof(complex float));
 		complex float *dst_ref =
-			(complex float *)malloc(dim0 * dim1 * 2 * nimg * sizeof(complex float));
+			(complex float *)malloc(dim0 * dim1 * 2 * ncoeffs * sizeof(complex float));
 		complex float *sens =
-			(complex float *)malloc(dim0 * dim1 * 2 * nmaps * sizeof(complex float));
+			(complex float *)malloc(dim0 * dim1 * 2 * ncoils * sizeof(complex float));
 		complex float *stkern_mat = (complex float *)malloc(
-				dim0 * dim1 * nimg * nimg * sizeof(complex float));
+				dim0 * dim1 * ncoeffs * ncoeffs * sizeof(complex float));
 		float *stkern_mat_trans = (float *)malloc(
-				dim0 * dim1 * nimg * nimg * sizeof(float));
+				dim0 * dim1 * ncoeffs * ncoeffs * sizeof(float));
 		complex float *tst1 = (complex float *)malloc(
-				dim0*dim1*nmaps*nimg*sizeof(complex float));
+				dim0*dim1*ncoils*ncoeffs*sizeof(complex float));
 		complex float *tst2 = (complex float *)malloc(
-				dim0*dim1*nmaps*nimg*sizeof(complex float));
+				dim0*dim1*ncoils*ncoeffs*sizeof(complex float));
 
 		fftwf_plan plan = fftwf_plan_dft_2d(dim1, dim0, src, dst, -1, FFTW_MEASURE);
 		fftwf_plan plan2 = fftwf_plan_dft_2d(dim1, dim0, src, dst, 1, FFTW_MEASURE);
@@ -252,18 +254,18 @@ int main(int argc, char *argv[]) {
 		fftwf_plan plan1d_1 = fftwf_plan_dft_1d(dim1, src, dst, -1, FFTW_MEASURE);
 		fftwf_plan plan1d_inv_1 = fftwf_plan_dft_1d(dim1, src, dst, 1, FFTW_MEASURE);
 
-		set_all(src, dim0 * dim1 * 2 * nimg);
-		set_all(dst, dim0 * dim1 * 2 * nimg);
-		set_all(sens, dim0 * dim1 * 2 * nmaps);
-		set_all(stkern_mat, dim0 * dim1 * nimg * nimg);
+		set_all(src, dim0 * dim1 * 2 * ncoeffs);
+		set_all(dst, dim0 * dim1 * 2 * ncoeffs);
+		set_all(sens, dim0 * dim1 * 2 * ncoils);
+		set_all(stkern_mat, dim0 * dim1 * ncoeffs * ncoeffs);
 
 		// Symmetric real-valued 4x4
-		for(int img0 = 0 ; img0 < nimg; img0++)
+		for(int img0 = 0 ; img0 < ncoeffs; img0++)
 		{
-			for(int img1 = img0 ; img1 < nimg; img1++)
+			for(int img1 = img0 ; img1 < ncoeffs; img1++)
 			{
-				complex float * mat = stkern_mat + img0 * dim0 * dim1 + img1 * dim0 * dim1 * nimg;
-				complex float * mat2 = stkern_mat + img1 * dim0 * dim1 + img0 * dim0 * dim1 * nimg;
+				complex float * mat = stkern_mat + img0 * dim0 * dim1 + img1 * dim0 * dim1 * ncoeffs;
+				complex float * mat2 = stkern_mat + img1 * dim0 * dim1 + img0 * dim0 * dim1 * ncoeffs;
 				for(int i = 0 ; i < dim1 ; i++)
 				{
 					for(int j = 0 ; j < dim0 ; j++)
@@ -276,12 +278,12 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
-		//  load_mat("sens30.mat", sens, dim0*dim1*2*nmaps*sizeof(complex float)); //
+		//  load_mat("sens30.mat", sens, dim0*dim1*2*ncoils*sizeof(complex float)); //
 		// 14
-		//  load_mat("stkern30.mat", stkern_mat, dim0*dim1*nimg*nimg*sizeof(complex
+		//  load_mat("stkern30.mat", stkern_mat, dim0*dim1*ncoeffs*ncoeffs*sizeof(complex
 		// float)); // 16
-		//  load_mat("src30.mat", src, dim0*dim1*2*nimg*sizeof(complex float)); // 8
-		//  load_mat("dst30.mat", dst_ref, dim0*dim1*2*nimg*sizeof(complex float)); //
+		//  load_mat("src30.mat", src, dim0*dim1*2*ncoeffs*sizeof(complex float)); // 8
+		//  load_mat("dst30.mat", dst_ref, dim0*dim1*2*ncoeffs*sizeof(complex float)); //
 		// 8
 
 #pragma omp barrier
@@ -289,7 +291,7 @@ int main(int argc, char *argv[]) {
 		gettimeofday(&start, NULL);
 		for (int iter = 0; iter < 250; iter++) {
 			jtmodel_normal_benchmark(sens, stkern_mat, plan, plan2, dst_ref, src, dim0,
-					dim1, nmaps, nimg, tst1);
+					dim1, ncoils, ncoeffs, tst1);
 		}
 		gettimeofday(&end, NULL);
 		double elapsed =
@@ -299,7 +301,7 @@ int main(int argc, char *argv[]) {
 #pragma omp barrier
 
 		// Transpose 4x4 matrices and set to float
-		for(int img = 0 ; img < nimg*nimg ; img++)
+		for(int img = 0 ; img < ncoeffs*ncoeffs ; img++)
 		{
 			complex float * nontrans = stkern_mat + img * dim0 * dim1;
 			float * trans = stkern_mat_trans + img * dim0 * dim1;
@@ -318,7 +320,7 @@ int main(int argc, char *argv[]) {
 		gettimeofday(&start, NULL);
 		for (int iter = 0; iter < 250; iter++) {
 			jtmodel_normal_benchmark_fast(sens, stkern_mat_trans, dst, src, dim0,
-					dim1, nmaps, nimg, plan1d_0, plan1d_inv_0, plan1d_1, plan1d_inv_1, tst2,m,dim0);
+					dim1, ncoils, ncoeffs, plan1d_0, plan1d_inv_0, plan1d_1, plan1d_inv_1, tst2,m,dim0);
 		}
 		gettimeofday(&end, NULL);
 		elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) * 1e-6;
@@ -328,14 +330,14 @@ int main(int argc, char *argv[]) {
 		double diff = 0.0;
 		double ref = 0.0;
 		for(int map = 0 ; map < 2 ; map++)
-			//for(int map = 0 ; map < nmaps ; map++)
+			//for(int map = 0 ; map < ncoils ; map++)
 		{
-			for(int img = 0 ; img < nimg ; img++)
+			for(int img = 0 ; img < ncoeffs ; img++)
 			{
 				complex float * _t1 = dst_ref + dim0*dim1*map + dim0*dim1*2*img;
 				complex float * _t2 = dst + dim0*dim1*map + dim0*dim1*2*img;
-				//complex float * _t1 = tst1+ dim0*dim1*map + dim0*dim1*nmaps*img;
-				//complex float * _t2 = tst2 + dim0*dim1*map + dim0*dim1*nmaps*img;
+				//complex float * _t1 = tst1+ dim0*dim1*map + dim0*dim1*ncoils*img;
+				//complex float * _t2 = tst2 + dim0*dim1*map + dim0*dim1*ncoils*img;
 				for(int i = 0 ; i < dim1 ; i++)
 				{
 					for(int j = 0 ; j < dim0 ; j++)
@@ -348,7 +350,7 @@ int main(int argc, char *argv[]) {
 						ref += _ref;
 						if (sqrt(_diff / _ref) > 0.1) {
 							//printf("Error %lu\t%.10e\t%.10e\n", j + i*dim0 + dim0*dim1*map + dim0*dim1*2*img, t1, t2);
-							//printf("Error %lu\t%.10e\t%.10e\n", j + i*dim0 + dim0*dim1*map + dim0*dim1*nmaps*img, t1, t2);
+							//printf("Error %lu\t%.10e\t%.10e\n", j + i*dim0 + dim0*dim1*map + dim0*dim1*ncoils*img, t1, t2);
 						}
 					}
 				}

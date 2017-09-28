@@ -28,6 +28,7 @@
 
 
 #include "jtmodel.h"
+#include "jtmodel_intel.h"
 
 
 
@@ -36,11 +37,19 @@ struct jtmodel_data {
 	INTERFACE(linop_data_t);
 
 	long cfksp_dims[DIMS];
+	long cfimg_dims[DIMS];
 
 	const struct linop_s* sense_op;
 	const struct operator_s* stkern_op;
 
 	complex float* cfksp;
+	complex float* sens;
+	long sens_dims[DIMS];
+
+	fftwf_plan plan1d_0;
+	fftwf_plan plan1d_inv_0;
+	fftwf_plan plan1d_1;
+	fftwf_plan plan1d_inv_1;
 };
 
 DEF_TYPEID(jtmodel_data);
@@ -55,6 +64,7 @@ struct stkern_data {
 	long stkern_dims[DIMS];
 
 	const complex float* stkern_mat;
+	const float* stkern_mat_trans;
 };
 
 DEF_TYPEID(stkern_data);
@@ -191,6 +201,7 @@ static void stkern_del(const operator_data_t* _data)
 {
 	const struct stkern_data* data = CAST_DOWN(stkern_data, _data);
 	md_free((void*)data->stkern_mat);
+	md_free((void*)data->stkern_mat_trans);
 	xfree(data);
 }
 
@@ -218,19 +229,50 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 #endif
 	}
 
+	long dim0 = pat_dims[PHS1_DIM];
+	long dim1 = pat_dims[PHS2_DIM];
+
+	complex float* stkern_mat3 = md_alloc(DIMS, stkern_dims, CFL_SIZE);
+	md_copy(DIMS, stkern_dims, stkern_mat3, stkern_mat2, CFL_SIZE);
+
+	float* stkern_mat_trans = md_alloc(DIMS, stkern_dims, FL_SIZE);
+
+	// Transpose 4x4 matrices and set to float
+	int nimg = bas_dims[COEFF_DIM];
+	for(int img = 0 ; img < nimg*nimg ; img++)
+	{
+		complex float * nontrans = stkern_mat3 + img * dim0 * dim1;
+		float * trans = stkern_mat_trans + img * dim0 * dim1;
+		for(int i = 0 ; i < dim1 ; i++)
+		{
+			for(int j = 0 ; j < dim0 ; j++)
+			{
+				trans[i + j * dim1] = creal(nontrans[j + i * dim0]);
+			}
+		}
+	}
+	md_free(stkern_mat3);
+
 #ifdef USE_CUDA
 		complex float* gpu_stkern_mat = NULL;
+		float* gpu_stkern_mat_trans = NULL;
+
 		if (use_gpu) {
 
 			gpu_stkern_mat = md_gpu_move(DIMS, stkern_dims, stkern_mat2, CFL_SIZE);
 			md_free(stkern_mat2);
 			stkern_mat2 = gpu_stkern_mat;
+
+			gpu_stkern_mat_trans = md_gpu_move(DIMS, stkern_dims, stkern_mat_trans, FL_SIZE);
+			md_free(stkern_mat_trans);
+			stkern_mat_trans = gpu_stkern_mat_trans;
 		}
 #else
 		assert(!use_gpu);
 #endif
 
 	data->stkern_mat = stkern_mat2;
+	data->stkern_mat_trans = stkern_mat_trans;
 
 	md_copy_dims(DIMS, data->stkern_dims, stkern_dims);
 	md_copy_dims(DIMS, data->cfksp_dims, cfksp_dims);
@@ -239,6 +281,8 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	md_select_dims(DIMS, ~COEFF_FLAG, fake_cfksp_dims, cfksp_dims);
 	fake_cfksp_dims[TE_DIM] = cfksp_dims[COEFF_DIM];
 	md_copy_dims(DIMS, data->fake_cfksp_dims, fake_cfksp_dims);
+
+
 
 	return operator_create(DIMS, cfksp_dims, DIMS, cfksp_dims, CAST_UP(PTR_PASS(data)), stkern_apply, stkern_del);
 }
@@ -261,6 +305,37 @@ static void jtmodel_adjoint(const linop_data_t* _data, complex float* dst, const
 }
 
 
+static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, const complex float* src)
+{
+	const struct jtmodel_data* data = CAST_DOWN(jtmodel_data, _data);
+
+
+	const struct operator_s* stkern_op = data->stkern_op;
+	const struct stkern_data* sdata = CAST_DOWN(stkern_data, operator_get_data(stkern_op));
+
+	int dim0 = data->sens_dims[PHS1_DIM];
+	int dim1 = data->sens_dims[PHS2_DIM];
+	int nmaps = data->sens_dims[COIL_DIM];
+	int nimg = data->cfksp_dims[COEFF_DIM];
+
+	if (data->plan1d_0 == NULL) {
+
+		debug_printf(DP_DEBUG1, "planning\n");
+		complex float* tmp1 = md_alloc(DIMS, data->cfimg_dims, CFL_SIZE);
+		complex float* tmp2 = md_alloc(DIMS, data->cfimg_dims, CFL_SIZE);
+		((struct jtmodel_data*)data)->plan1d_0 = fftwf_plan_dft_1d(dim0, tmp1, tmp2, -1, FFTW_MEASURE);
+		((struct jtmodel_data*)data)->plan1d_inv_0 = fftwf_plan_dft_1d(dim0, tmp1, tmp2, 1, FFTW_MEASURE);
+		((struct jtmodel_data*)data)->plan1d_1 = fftwf_plan_dft_1d(dim1, tmp1, tmp2, -1, FFTW_MEASURE);
+		((struct jtmodel_data*)data)->plan1d_inv_1 = fftwf_plan_dft_1d(dim1, tmp1, tmp2, 1, FFTW_MEASURE);
+		md_free(tmp1);
+		md_free(tmp2);
+	}
+
+	jtmodel_normal_benchmark_fast(data->sens, sdata->stkern_mat_trans, dst, src, dim0, dim1, nmaps, nimg, data->plan1d_0, data->plan1d_inv_0, data->plan1d_1, data->plan1d_inv_1, NULL, 32, dim0);
+
+}
+
+
 static void jtmodel_normal(const linop_data_t* _data, complex float* dst, const complex float* src)
 {
 	const struct jtmodel_data* data = CAST_DOWN(jtmodel_data, _data);
@@ -272,7 +347,6 @@ static void jtmodel_normal(const linop_data_t* _data, complex float* dst, const 
 	linop_adjoint_unchecked(data->sense_op, dst, cfksp2);
 
 	md_free(cfksp2);
-
 }
 
 
@@ -282,6 +356,7 @@ static void jtmodel_del(const linop_data_t* _data)
 
 	operator_free(data->stkern_op);
 	md_free(data->cfksp);
+	md_free(data->sens);
 	xfree(data);
 }
 
@@ -308,6 +383,8 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 	SET_TYPEID(jtmodel_data, data);
 
 	data->sense_op = sense_op;
+	data->sens = NULL;
+	md_singleton_dims(DIMS, data->sens_dims);
 
 	// FIXME: make the select_dims take the inverse flags, so that it doesn't need to
 	// change each time a new dim gets used
@@ -336,3 +413,54 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 
 
 
+struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
+		const long cfimg_dims[DIMS],
+		const struct linop_s* sense_op,
+		const long sens_dims[DIMS], const complex float* sens,
+		const long pat_dims[DIMS], const complex float* pattern,
+		const long bas_dims[DIMS], const complex float* basis,
+		const complex float* stkern_mat, bool use_gpu,
+		fftwf_plan plan1d_0, fftwf_plan plan1d_inv_0, fftwf_plan plan1d_1, fftwf_plan plan1d_inv_1)
+{
+
+	PTR_ALLOC(struct jtmodel_data, data);
+	SET_TYPEID(jtmodel_data, data);
+
+	data->sense_op = sense_op;
+	md_copy_dims(DIMS, data->cfimg_dims, cfimg_dims);
+
+	data->plan1d_0 = plan1d_0;
+	data->plan1d_inv_0 = plan1d_inv_0;
+	data->plan1d_1 = plan1d_1;
+	data->plan1d_inv_1 = plan1d_inv_1;
+
+	// FIXME: make the select_dims take the inverse flags, so that it doesn't need to
+	// change each time a new dim gets used
+	md_select_dims(DIMS, (FFT_FLAGS | COIL_FLAG | COEFF_FLAG | CSHIFT_FLAG | TIME_FLAG), data->cfksp_dims, max_dims);
+
+	md_copy_dims(DIMS, data->sens_dims, sens_dims);
+
+#ifdef USE_CUDA
+	data->cfksp = (use_gpu ? md_alloc_gpu : md_alloc)(DIMS, data->cfksp_dims, CFL_SIZE);
+	data->sens = (use_gpu ? md_alloc_gpu : md_alloc)(DIMS, data->sens_dims, CFL_SIZE);
+#else
+	assert(!use_gpu);
+	data->cfksp = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
+	data->sens = md_alloc(DIMS, data->sens_dims, CFL_SIZE);
+#endif
+
+	md_copy(DIMS, data->sens_dims, data->sens, sens, CFL_SIZE);
+
+	long stkern_dims[DIMS];
+	md_select_dims(DIMS, (PHS1_FLAG | PHS2_FLAG | COEFF_FLAG | CSHIFT_FLAG | TIME_FLAG), stkern_dims, max_dims);
+	stkern_dims[TE_DIM] = stkern_dims[COEFF_DIM];
+
+	debug_printf(DP_DEBUG3, "stkern_dims =\t");
+	debug_print_dims(DP_DEBUG3, DIMS, stkern_dims);
+
+	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, stkern_mat, data->cfksp_dims, use_gpu);
+	data->stkern_op = stkern_op;
+
+	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, CAST_UP(data), jtmodel_forward, jtmodel_adjoint, jtmodel_intel_normal, NULL, jtmodel_del);
+
+}

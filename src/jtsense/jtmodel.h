@@ -8,6 +8,8 @@
 extern "C" {
 #endif
 
+#include <fftw3.h>
+
 #include "misc/mri.h"
 
 
@@ -24,6 +26,15 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const long bas_dims[DIMS], const _Complex float* basis,
 		const complex float* stkern_mat,
 		bool use_gpu);
+
+struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
+		const long cfimg_dims[DIMS],
+		const struct linop_s* sense_op,
+		const long sens_dims[DIMS], const _Complex float* sens,
+		const long pat_dims[DIMS], const _Complex float* pattern,
+		const long bas_dims[DIMS], const _Complex float* basis,
+		const complex float* stkern_mat, bool use_gpu,
+		fftwf_plan plan1d_0, fftwf_plan plan1d_inv_0, fftwf_plan plan1d_1, fftwf_plan plan1d_inv_1);
 
 
 #ifdef __cplusplus

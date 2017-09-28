@@ -15,6 +15,7 @@ MAKEFLAGS += -R
 # use for parallel make
 AR=./ar_lock.sh
 
+MKL?=0
 CUDA?=0
 ACML?=0
 OMP?=1
@@ -122,6 +123,9 @@ CUDA_BASE ?= /usr/local/
 # acml
 
 ACML_BASE ?= /usr/local/acml/acml4.4.0/gfortran64_mp/
+
+# mkl
+MKL_BASE ?= /opt/intel/mkl/lib/intel64/ 
 
 # fftw
 
@@ -296,6 +300,10 @@ else
 BLAS_L := -L$(BLAS_BASE)/lib -llapacke -lblas
 endif
 endif
+endif
+
+ifeq ($(MKL),1)
+BLAS_L := -L$(MKL_BASE) -lmkl_intel_ilp64 -lmkl_gnu_thread -lmkl_core
 endif
 
 

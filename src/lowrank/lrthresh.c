@@ -17,6 +17,9 @@
 #include <math.h>
 #include <stdbool.h>
 #include <assert.h>
+#ifdef USE_MKL
+#include <mkl.h>
+#endif
 
 #include "misc/misc.h"
 #include "misc/mri.h"
@@ -162,7 +165,6 @@ static int rand_lim(int limit)
 }
 
 
-
 /*
  * Low rank threhsolding for arbitrary block sizes
  */
@@ -219,7 +221,14 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 			B = 1;
 		}
 
-
+#ifdef USE_INTEL_KERNELS
+		int dim0 = data->dims[PHS1_DIM];
+		int dim1 = data->dims[PHS2_DIM];
+		const unsigned long nmaps = data->dims[COIL_DIM];
+		const unsigned long nimg = data->dims[COEFF_DIM];
+		const int blkdim = blkdims[PHS1_DIM];
+		mylrthresh(srcl, dstl, lambda * GWIDTH(M, N, B), dim1, dim0, nimg, nmaps, blkdim, shifts[PHS2_DIM], shifts[PHS1_DIM]);
+#else
 		complex float* tmp;
 #ifdef USE_CUDA
 		tmp = (data->use_gpu ? md_alloc_gpu : md_alloc)(DIMS, zpad_dims, CFL_SIZE);
@@ -258,6 +267,7 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 
 		md_free(tmp);
 		md_free(tmp_mat);
+#endif // USE_INTEL_KERNELS
 	}
 }
 

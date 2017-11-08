@@ -13,6 +13,9 @@
 #include <stdio.h>
 #include <math.h>
 #include <fftw3.h>
+#ifdef USE_MKL
+#include <mkl.h>
+#endif
 
 #include "num/multind.h"
 #include "num/flpmath.h"
@@ -369,31 +372,12 @@ int main_t2sh_pics(int argc, char* argv[])
 		sense_op = tmp_op;
 	}
 
-#if 0
+#ifdef USE_INTEL_KERNELS
+	DFTI_DESCRIPTOR_HANDLE plan1d_0 = NULL;
+	DFTI_DESCRIPTOR_HANDLE plan1d_1 = NULL;
+	const struct linop_s* forward_op = jtmodel_intel_init(max_dims, cfimg_dims, sense_op, sens_dims, sens, pat_dims, pattern, basis_dims, basis, use_stkern_file ? stkern_mat : NULL, use_gpu, plan1d_0, plan1d_1);
+#else
 	const struct linop_s* forward_op = jtmodel_init(max_dims, sense_op, pat_dims, pattern, basis_dims, basis, use_stkern_file ? stkern_mat : NULL, use_gpu);
-#else
-#if 1
-	int dim0 = sens_dims[PHS1_DIM];
-	int dim1 = sens_dims[PHS2_DIM];
-
-	complex float* src = md_alloc(DIMS, cfimg_dims, CFL_SIZE);
-	complex float* dst = md_alloc(DIMS, cfimg_dims, CFL_SIZE);
-
-	fftwf_plan plan1d_0 = fftwf_plan_dft_1d(dim0, src, dst, -1, FFTW_MEASURE);
-	fftwf_plan plan1d_inv_0 = fftwf_plan_dft_1d(dim0, src, dst, 1, FFTW_MEASURE);
-	fftwf_plan plan1d_1 = fftwf_plan_dft_1d(dim1, src, dst, -1, FFTW_MEASURE);
-	fftwf_plan plan1d_inv_1 = fftwf_plan_dft_1d(dim1, src, dst, 1, FFTW_MEASURE);
-
-	md_free(src);
-	md_free(dst);
-#else
-	fftwf_plan plan1d_0 = NULL;
-	fftwf_plan plan1d_inv_0 = NULL;
-	fftwf_plan plan1d_1 = NULL;
-	fftwf_plan plan1d_inv_1 = NULL;
-#endif
-
-	const struct linop_s* forward_op = jtmodel_intel_init(max_dims, cfimg_dims, sense_op, sens_dims, sens, pat_dims, pattern, basis_dims, basis, use_stkern_file ? stkern_mat : NULL, use_gpu, plan1d_0, plan1d_inv_0, plan1d_1, plan1d_inv_1);
 #endif
 
 	if (use_stkern_file) {

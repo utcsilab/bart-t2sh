@@ -4,8 +4,6 @@
  */
 
 #include <complex.h>
-
-
 #include "misc/mri.h"
 
 #ifndef MAX_LEV
@@ -13,6 +11,11 @@
 #endif
 
 struct operator_p_s;
+
+#ifdef USE_INTEL_KERNELS
+void mylrthresh(complex float *mat1, complex float *mat2, float lambda, int M,
+                int N, int nimg, int nmap, int blksize, int shift0, int shift1);
+#endif
 
 
 // Low rank thresholding for arbitrary block sizes

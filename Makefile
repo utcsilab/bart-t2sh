@@ -310,10 +310,11 @@ CPPFLAGS += -DUSE_MKL -DMKL_Complex8="complex float" -DMKL_Complex16="complex do
 CFLAGS += -DUSE_MKL -DMKL_Complex8="complex float" -DMKL_Complex16="complex double"
 endif
 
-
-
-
-
+ifeq ($(USE_INTEL_KERNELS),1)
+INTEL_KERNELS=t2sh_intel_kernels/t2sh_intel.a
+CPPFLAGS += -DUSE_INTEL_KERNELS
+CFLAGS += -DUSE_INTEL_KERNELS
+endif
 
 
 # png
@@ -441,7 +442,7 @@ endif
 
 .SECONDEXPANSION:
 $(TARGETS): % : src/main.c $(srcdir)/%.o $$(MODULES_%) $(MODULES)
-	$(LINKER) $(LDFLAGS) $(CFLAGS) -Dmain_real=main_$@ -o $@ $+ $(FFTW_L) $(CUDA_L) $(BLAS_L) $(PNG_L) $(ISMRM_L) -lm
+	$(LINKER) $(LDFLAGS) $(CFLAGS) -Dmain_real=main_$@ -o $@ $+ $(INTEL_KERNELS) $(FFTW_L) $(CUDA_L) $(BLAS_L) $(PNG_L) $(ISMRM_L) -lm
 #	rm $(srcdir)/$@.o
 
 UTESTS=$(shell $(root)/utests/utests-collect.sh ./utests/$@.c)

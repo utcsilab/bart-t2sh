@@ -11,6 +11,9 @@
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
+#ifdef USE_MKL
+#include <mkl.h>
+#endif
 
 #include "num/multind.h"
 #include "num/flpmath.h"
@@ -28,7 +31,9 @@
 
 
 #include "jtmodel.h"
+#ifdef USE_INTEL_KERNELS
 #include "jtmodel_intel.h"
+#endif
 
 
 
@@ -43,13 +48,16 @@ struct jtmodel_data {
 	const struct operator_s* stkern_op;
 
 	complex float* cfksp;
+	complex float* cfksp3;
+	complex float* cfksp4;
 	complex float* sens;
 	long sens_dims[DIMS];
 
-	fftwf_plan plan1d_0;
-	fftwf_plan plan1d_inv_0;
-	fftwf_plan plan1d_1;
-	fftwf_plan plan1d_inv_1;
+#ifdef USE_INTEL_KERNELS
+	DFTI_DESCRIPTOR_HANDLE plan1d_0;
+	DFTI_DESCRIPTOR_HANDLE plan1d_1;
+	DFTI_DESCRIPTOR_HANDLE plan2d;
+#endif
 };
 
 DEF_TYPEID(jtmodel_data);
@@ -305,7 +313,7 @@ static void jtmodel_adjoint(const linop_data_t* _data, complex float* dst, const
 	linop_adjoint_unchecked(data->sense_op, dst, src);
 }
 
-
+#ifdef USE_INTEL_KERNELS
 static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, const complex float* src)
 {
 	const struct jtmodel_data* data = CAST_DOWN(jtmodel_data, _data);
@@ -322,17 +330,27 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
 		debug_printf(DP_DEBUG1, "planning\n");
 		complex float* tmp1 = md_alloc(DIMS, data->cfimg_dims, CFL_SIZE);
 		complex float* tmp2 = md_alloc(DIMS, data->cfimg_dims, CFL_SIZE);
-		((struct jtmodel_data*)data)->plan1d_0 = fftwf_plan_dft_1d(dim0, tmp1, tmp2, -1, FFTW_MEASURE);
-		((struct jtmodel_data*)data)->plan1d_inv_0 = fftwf_plan_dft_1d(dim0, tmp1, tmp2, 1, FFTW_MEASURE);
-		((struct jtmodel_data*)data)->plan1d_1 = fftwf_plan_dft_1d(dim1, tmp1, tmp2, -1, FFTW_MEASURE);
-		((struct jtmodel_data*)data)->plan1d_inv_1 = fftwf_plan_dft_1d(dim1, tmp1, tmp2, 1, FFTW_MEASURE);
+		((struct jtmodel_data*)data)->cfksp3 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
+		((struct jtmodel_data*)data)->cfksp4 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
+
+  		DftiCreateDescriptor(&(((struct jtmodel_data*)data)->plan1d_0), DFTI_SINGLE, DFTI_COMPLEX, 1, (MKL_LONG)dim0);
+  		DftiSetValue(((struct jtmodel_data*)data)->plan1d_0, DFTI_PLACEMENT, DFTI_INPLACE);
+  		DftiCommitDescriptor(((struct jtmodel_data*)data)->plan1d_0);
+
+  		DftiCreateDescriptor(&(((struct jtmodel_data*)data)->plan1d_1), DFTI_SINGLE, DFTI_COMPLEX, 1, (MKL_LONG)dim1);
+  		DftiSetValue(((struct jtmodel_data*)data)->plan1d_1, DFTI_PLACEMENT, DFTI_INPLACE);
+  		DftiCommitDescriptor(((struct jtmodel_data*)data)->plan1d_1);;
+
 		md_free(tmp1);
 		md_free(tmp2);
 	}
 
-	jtmodel_normal_benchmark_fast(data->cfimg_dims, data->sens_dims, data->sens, sdata->stkern_mat_trans, dst, src, data->plan1d_0, data->plan1d_inv_0, data->plan1d_1, data->plan1d_inv_1, 32, dim0);
+	const unsigned long nmaps = data->sens_dims[COIL_DIM];
+	const unsigned long nimg = data->cfimg_dims[COEFF_DIM];
+	jtmodel_normal_benchmark_fast_parallel(data->sens, sdata->stkern_mat_trans, dst, src, dim0, dim1, nmaps, nimg, data->plan1d_0, data->plan1d_1, data->cfksp3, data->cfksp4);
 
 }
+#endif
 
 
 static void jtmodel_normal(const linop_data_t* _data, complex float* dst, const complex float* src)
@@ -411,7 +429,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 }
 
 
-
+#ifdef USE_INTEL_KERNELS
 struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 		const long cfimg_dims[DIMS],
 		const struct linop_s* sense_op,
@@ -419,7 +437,7 @@ struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 		const long pat_dims[DIMS], const complex float* pattern,
 		const long bas_dims[DIMS], const complex float* basis,
 		const complex float* stkern_mat, bool use_gpu,
-		fftwf_plan plan1d_0, fftwf_plan plan1d_inv_0, fftwf_plan plan1d_1, fftwf_plan plan1d_inv_1)
+        	DFTI_DESCRIPTOR_HANDLE plan1d_0, DFTI_DESCRIPTOR_HANDLE plan1d_1)
 {
 
 	PTR_ALLOC(struct jtmodel_data, data);
@@ -428,10 +446,8 @@ struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 	data->sense_op = sense_op;
 	md_copy_dims(DIMS, data->cfimg_dims, cfimg_dims);
 
-	data->plan1d_0 = plan1d_0;
-	data->plan1d_inv_0 = plan1d_inv_0;
-	data->plan1d_1 = plan1d_1;
-	data->plan1d_inv_1 = plan1d_inv_1;
+    	data->plan1d_0 = plan1d_0;
+    	data->plan1d_1 = plan1d_1;
 
 	// FIXME: make the select_dims take the inverse flags, so that it doesn't need to
 	// change each time a new dim gets used
@@ -463,3 +479,4 @@ struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, CAST_UP(data), jtmodel_forward, jtmodel_adjoint, jtmodel_intel_normal, NULL, jtmodel_del);
 
 }
+#endif

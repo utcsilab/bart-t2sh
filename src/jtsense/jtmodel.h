@@ -9,6 +9,10 @@ extern "C" {
 #endif
 
 #include <fftw3.h>
+#ifdef USE_MKL
+#include <complex.h>
+#include <mkl.h>
+#endif
 
 #include "misc/mri.h"
 
@@ -27,6 +31,7 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const complex float* stkern_mat,
 		bool use_gpu);
 
+#ifdef USE_INTEL_KERNELS
 struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 		const long cfimg_dims[DIMS],
 		const struct linop_s* sense_op,
@@ -34,8 +39,8 @@ struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 		const long pat_dims[DIMS], const _Complex float* pattern,
 		const long bas_dims[DIMS], const _Complex float* basis,
 		const complex float* stkern_mat, bool use_gpu,
-		fftwf_plan plan1d_0, fftwf_plan plan1d_inv_0, fftwf_plan plan1d_1, fftwf_plan plan1d_inv_1);
-
+		DFTI_DESCRIPTOR_HANDLE plan1d_0, DFTI_DESCRIPTOR_HANDLE plan1d_1);
+#endif
 
 #ifdef __cplusplus
 }

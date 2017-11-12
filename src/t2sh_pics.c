@@ -357,10 +357,17 @@ int main_t2sh_pics(int argc, char* argv[])
 	if (max_dims_sens[CSHIFT_DIM] > 1)
 		sens_flags = MD_SET(sens_flags, CSHIFT_DIM);
 
+	double rescale_start = timestamp();
+#ifndef USE_INTEL_KERNELS
 	const struct linop_s* sense_op = sense_init(max_dims_sens, sens_flags, sens);
-
+#else
+	const struct linop_s* sense_op = NULL;
+#endif
+	double rescale_end = timestamp();
+	debug_printf(DP_DEBUG3, "rescale Time: %f\n", rescale_end - rescale_start);
 
 	if (rvc) {
+		debug_printf(DP_INFO, "RVC\n");
 
 		struct linop_s* rvc_op = linop_realval_create(DIMS, cfimg_dims);
 		struct linop_s* tmp_op = linop_chain(rvc_op, sense_op);
@@ -506,7 +513,10 @@ int main_t2sh_pics(int argc, char* argv[])
 	const struct operator_s* t2sh_pics_op = operator_t2sh_pics_create(&conf, italgo, iconf, forward_op, nr_penalties, thresh_ops,
 				(ADMM == algo) ? trafos : NULL, NULL, cfimg_truth, use_gpu);
 
+	double op_start = timestamp();
 	operator_apply(t2sh_pics_op, DIMS, cfimg_dims, cfimg, DIMS, cfksp_dims, cfksp);
+	double op_end = timestamp();
+	debug_printf(DP_DEBUG3, "Solver Time: %f\n", op_end - op_start);
 
 	operator_free(t2sh_pics_op);
 
@@ -519,7 +529,9 @@ int main_t2sh_pics(int argc, char* argv[])
 
 
 	linop_free(forward_op);
+#ifndef USE_INTEL_KERNELS
 	linop_free(sense_op);
+#endif
 
 	unmap_cfl(DIMS, cfksp_dims, cfksp);
 	unmap_cfl(DIMS, pat_dims, pattern);
@@ -535,7 +547,6 @@ int main_t2sh_pics(int argc, char* argv[])
 
 
 	double end_time = timestamp();
-
 	debug_printf(DP_INFO, "Total Time: %f\n", end_time - start_time);
 
 	exit(0);

@@ -220,6 +220,7 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 		bool use_gpu)
 {
 
+	double start_time = timestamp();
 
 	PTR_ALLOC(struct stkern_data, data);
 	SET_TYPEID(stkern_data, data);
@@ -252,6 +253,7 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 	{
 		complex float * nontrans = stkern_mat3 + img * dim0 * dim1;
 		float * trans = stkern_mat_trans + img * dim0 * dim1;
+		#pragma omp parallel for
 		for(int i = 0 ; i < dim1 ; i++)
 		{
 			for(int j = 0 ; j < dim0 ; j++)
@@ -293,6 +295,8 @@ static const struct operator_s* stkern_init(const long pat_dims[DIMS], const com
 
 
 
+	double end_time = timestamp();
+	debug_printf(DP_INFO, "stkern Time: %f\n", end_time - start_time);
 	return operator_create(DIMS, cfksp_dims, DIMS, cfksp_dims, CAST_UP(PTR_PASS(data)), stkern_apply, stkern_del);
 }
 
@@ -309,8 +313,24 @@ static void jtmodel_forward(const linop_data_t* _data, complex float* dst, const
 static void jtmodel_adjoint(const linop_data_t* _data, complex float* dst, const complex float* src)
 {
 	const struct jtmodel_data* data = CAST_DOWN(jtmodel_data, _data);
-
+#ifdef USE_INTEL_KERNELS
+	const unsigned long nmaps = data->sens_dims[COIL_DIM];
+	const unsigned long nimg = data->cfimg_dims[COEFF_DIM];
+	int dim0 = data->sens_dims[PHS1_DIM];
+	int dim1 = data->sens_dims[PHS2_DIM];
+	jtmodel_adjoint_benchmark_fast_parallel(data->sens,
+                                             dst,
+					     src,
+					     dim0,
+					     dim1,
+					     nmaps,
+					     nimg,
+					     data->plan2d,
+					     data->cfksp3);
+#else
 	linop_adjoint_unchecked(data->sense_op, dst, src);
+#endif
+
 }
 
 #ifdef USE_INTEL_KERNELS
@@ -328,8 +348,6 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
 	if (data->plan1d_0 == NULL) {
 
 		debug_printf(DP_DEBUG1, "planning\n");
-		((struct jtmodel_data*)data)->cfksp3 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
-		((struct jtmodel_data*)data)->cfksp4 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
 
   		DftiCreateDescriptor(&(((struct jtmodel_data*)data)->plan1d_0), DFTI_SINGLE, DFTI_COMPLEX, 1, (MKL_LONG)dim0);
   		DftiSetValue(((struct jtmodel_data*)data)->plan1d_0, DFTI_PLACEMENT, DFTI_INPLACE);
@@ -422,6 +440,8 @@ struct linop_s* jtmodel_init(const long max_dims[DIMS],
 
 	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, stkern_mat, data->cfksp_dims, use_gpu);
 	data->stkern_op = stkern_op;
+	//(data)->cfksp3 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
+	//(data)->cfksp4 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
 
 	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, CAST_UP(data), jtmodel_forward, jtmodel_adjoint, jtmodel_normal, NULL, jtmodel_del);
 
@@ -474,8 +494,17 @@ struct linop_s* jtmodel_intel_init(const long max_dims[DIMS],
 
 	const struct operator_s* stkern_op = stkern_init(pat_dims, pattern, bas_dims, basis, stkern_dims, stkern_mat, data->cfksp_dims, use_gpu);
 	data->stkern_op = stkern_op;
+	int dim0 = data->sens_dims[PHS1_DIM];
+	int dim1 = data->sens_dims[PHS2_DIM];
+	int sense_op_N = 16;
+	MKL_LONG dims[2] = {dim1, dim0};
+  	DftiCreateDescriptor(&((data)->plan2d), DFTI_SINGLE, DFTI_COMPLEX, 2, dims);
+  	DftiSetValue((data)->plan2d, DFTI_PLACEMENT, DFTI_NOT_INPLACE);
+  	DftiCommitDescriptor((data)->plan2d);
+	(data)->cfksp3 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
+	(data)->cfksp4 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
 
-	return linop_create(DIMS, data->cfksp_dims, linop_domain(sense_op)->N, linop_domain(sense_op)->dims, CAST_UP(data), jtmodel_forward, jtmodel_adjoint, jtmodel_intel_normal, NULL, jtmodel_del);
+	return linop_create(DIMS, data->cfksp_dims, sense_op_N, data->cfimg_dims, CAST_UP(data), jtmodel_forward, jtmodel_adjoint, jtmodel_intel_normal, NULL, jtmodel_del);
 
 }
 #endif

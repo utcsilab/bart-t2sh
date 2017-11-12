@@ -22,6 +22,9 @@
 #include "misc/mri.h"
 #include "misc/misc.h"
 #include "misc/debug.h"
+#ifdef USE_INTEL_KERNELS
+#include "t2sh_intel_kernels.h"
+#endif
 
 #include "optcom.h"
 
@@ -78,10 +81,6 @@ static int compare_cmpl_magn(const void* a, const void* b)
 {
 	return (int)copysignf(1., (cabsf(*(complex float*)a) - cabsf(*(complex float*)b)));
 }
-
-#ifdef USE_INTEL_KERNELS
-void gnu_sort_wrapper(float __complex__ * base, size_t len);
-#endif
 
 float estimate_scaling_norm(float rescale, long imsize, complex float* tmpnorm, bool compat)
 {

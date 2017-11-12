@@ -1,13 +1,8 @@
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "misc/mri.h"
-#include <fftw3.h>
-#ifdef USE_MKL
 #include <mkl.h>
-#endif
 
 void jtmodel_normal_benchmark_fast_parallel(
 		const _Complex float *sens, const float *stkern_mat, 
@@ -29,6 +24,11 @@ void jtmodel_adjoint_benchmark_fast_parallel(
     const unsigned long nimg,
     DFTI_DESCRIPTOR_HANDLE plan2d,
     _Complex float * cfksp3);
+
+void mylrthresh(const _Complex float *mat1, _Complex float *mat2, float lambda, int M,
+                int N, int nimg, int nmap, int blksize, int shift0, int shift1);
+
+void gnu_sort_wrapper(float __complex__ * base, size_t len);
 
 #ifdef __cplusplus
 }

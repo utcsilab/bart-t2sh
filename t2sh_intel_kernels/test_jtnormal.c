@@ -8,16 +8,7 @@
 #include <mkl.h>
 #include <omp.h>
 
-void jtmodel_normal_benchmark_fast_parallel(
-    const complex float * __restrict__ sens, const float * __restrict__ stkern_mat, 
-    complex float * dst, const complex float * src,
-    const unsigned long dim0,
-    const unsigned long dim1,
-    const unsigned long nmaps,
-    const unsigned long nimg,
-    DFTI_DESCRIPTOR_HANDLE plan1d_0, DFTI_DESCRIPTOR_HANDLE plan1d_1,
-    complex float * cfksp3,
-    complex float * cfksp4);
+#include "t2sh_intel_kernels.h"
 
 void set_all(complex float *arr, unsigned long dim0, unsigned long dim1) {
   int nthr = 1;

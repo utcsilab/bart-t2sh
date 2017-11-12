@@ -4,7 +4,7 @@
 #include <math.h>
 #include <assert.h>
 
-void gnu_sort_wrapper(float __complex__ * base, size_t len);
+#include "t2sh_intel_kernels.h"
 
 static int compare_cmpl_magn(const void* a, const void* b)
 {

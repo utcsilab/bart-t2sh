@@ -11,11 +11,6 @@
 
 struct operator_p_s;
 
-#ifdef USE_INTEL_KERNELS
-void mylrthresh(const _Complex float *mat1, _Complex float *mat2, float lambda, int M,
-                int N, int nimg, int nmap, int blksize, int shift0, int shift1);
-#endif
-
 
 // Low rank thresholding for arbitrary block sizes
 extern const struct operator_p_s* lrthresh_create(const long dims_lev[DIMS], _Bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, _Bool noise, int remove_mean, _Bool use_gpu);

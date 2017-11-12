@@ -6,9 +6,7 @@
 #include <math.h>
 #include <sys/time.h>
 
-void mylrthresh(complex float *mat1, complex float *mat2, float lambda, int M,
-                int N, int nimg, int nmap, int blksize, int shift0, int shift1);
-
+#include "t2sh_intel_kernels.h"
 
 int main(int argc, char *argv[]) {
   int nimg = 4;

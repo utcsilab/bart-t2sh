@@ -21,6 +21,10 @@
 #include <mkl.h>
 #endif
 
+#ifdef USE_INTEL_KERNELS
+#include "t2sh_intel_kernels.h"
+#endif
+
 #include "misc/misc.h"
 #include "misc/mri.h"
 #include "misc/debug.h"

@@ -32,7 +32,7 @@
 
 #include "jtmodel.h"
 #ifdef USE_INTEL_KERNELS
-#include "jtmodel_intel.h"
+#include "t2sh_intel_kernels.h"
 #endif
 
 

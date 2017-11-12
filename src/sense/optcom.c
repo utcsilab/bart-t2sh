@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <math.h>
 
+
 #include "sense/model.h"
 #include "linops/linop.h"
 
@@ -78,10 +79,17 @@ static int compare_cmpl_magn(const void* a, const void* b)
 	return (int)copysignf(1., (cabsf(*(complex float*)a) - cabsf(*(complex float*)b)));
 }
 
+#ifdef USE_INTEL_KERNELS
+void gnu_sort_wrapper(float __complex__ * base, size_t len);
+#endif
 
 float estimate_scaling_norm(float rescale, long imsize, complex float* tmpnorm, bool compat)
 {
+#ifdef USE_INTEL_KERNELS
+	gnu_sort_wrapper(tmpnorm, (size_t)imsize);
+#else
 	qsort(tmpnorm, (size_t)imsize, sizeof(complex float), compare_cmpl_magn);
+#endif
 
 	float median = cabsf(tmpnorm[imsize / 2]) / rescale; //median
 	float p90 = cabsf(tmpnorm[(int)trunc(imsize * 0.9)]) / rescale;

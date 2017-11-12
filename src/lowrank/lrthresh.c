@@ -160,7 +160,6 @@ static int rand_lim(int limit)
 		retval = rand() / divisor;
 
 	} while (retval > limit);
-
 	return retval;
 }
 
@@ -220,14 +219,13 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 			N = 1;
 			B = 1;
 		}
-
 #ifdef USE_INTEL_KERNELS
 		int dim0 = data->dims[PHS1_DIM];
 		int dim1 = data->dims[PHS2_DIM];
 		const unsigned long nmaps = data->dims[COIL_DIM];
 		const unsigned long nimg = data->dims[COEFF_DIM];
 		const int blkdim = blkdims[PHS1_DIM];
-		mylrthresh(srcl, dstl, lambda * GWIDTH(M, N, B), dim1, dim0, nimg, nmaps, blkdim, shifts[PHS2_DIM], shifts[PHS1_DIM]);
+		mylrthresh(srcl, dstl, lambda * GWIDTH(M, N, B), dim1, dim0, nimg, 2, blkdim, shifts[PHS2_DIM], shifts[PHS1_DIM]);
 #else
 		complex float* tmp;
 #ifdef USE_CUDA
@@ -237,9 +235,7 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 #endif
 
 		md_circ_ext(DIMS, zpad_dims, tmp, data->dims, srcl, CFL_SIZE);
-
 		md_circ_shift(DIMS, zpad_dims, shifts, tmp, tmp, CFL_SIZE);
-
 
 		long mat_dims[2];
 		basorati_dims(DIMS, mat_dims, blkdims, zpad_dims);
@@ -253,6 +249,7 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 		// Reshape image into a blk_size x number of blocks matrix
 
 		basorati_matrix(DIMS, blkdims, mat_dims, tmp_mat, zpad_dims, zpad_strs, tmp);
+
 
 		batch_svthresh(M, N, mat_dims[1], lambda * GWIDTH(M, N, B), *(complex float (*)[mat_dims[1]][M][N])tmp_mat);
 

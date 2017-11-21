@@ -226,10 +226,10 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 #ifdef USE_INTEL_KERNELS
 		int dim0 = data->dims[PHS1_DIM];
 		int dim1 = data->dims[PHS2_DIM];
-		const unsigned long nmaps = data->dims[COIL_DIM];
+		const unsigned long nmaps = data->dims[MAPS_DIM];
 		const unsigned long nimg = data->dims[COEFF_DIM];
 		const int blkdim = blkdims[PHS1_DIM];
-		mylrthresh(srcl, dstl, lambda * GWIDTH(M, N, B), dim1, dim0, nimg, 2, blkdim, shifts[PHS2_DIM], shifts[PHS1_DIM]);
+		mylrthresh(srcl, dstl, lambda * GWIDTH(M, N, B), dim1, dim0, nimg, nmaps, blkdim, shifts[PHS2_DIM], shifts[PHS1_DIM]);
 #else
 		complex float* tmp;
 #ifdef USE_CUDA

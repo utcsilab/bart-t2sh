@@ -10,10 +10,15 @@
 
 #include "misc/misc.h"
 
+#ifndef USE_MKL
 #ifndef NOLAPACKE
 #include <lapacke.h>
 #else
 #include "lapacke/lapacke.h"
+#endif
+#else
+#include <complex.h>
+#include <mkl.h>
 #endif
 
 #include "lapack.h"

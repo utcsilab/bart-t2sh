@@ -100,6 +100,7 @@ else
 endif
 
 CXX ?= g++
+LINKER ?= $(CC)
 
 
 
@@ -303,22 +304,27 @@ endif
 endif
 
 ifeq ($(MKL),1)
-BLAS_L := -L$(MKL_BASE) -lmkl_intel_ilp64 -lmkl_gnu_thread -lmkl_core
+BLAS_H := -I$(MKL_BASE)/include
+BLAS_L := -L$(MKL_BASE)/lib/intel64 -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core
+CPPFLAGS += -DUSE_MKL -DMKL_Complex8="complex float" -DMKL_Complex16="complex double"
+CFLAGS += -DUSE_MKL -DMKL_Complex8="complex float" -DMKL_Complex16="complex double"
 endif
 
 
 
 
-CPPFLAGS += $(FFTW_H) $(BLAS_H)
 
 
 
 # png
-PNG_L := -lpng
+PNG_L ?= -lpng
+PNG_H ?= 
 
 ifeq ($(SLINK),1)
 	PNG_L += -lz
 endif
+
+CPPFLAGS += $(FFTW_H) $(BLAS_H) $(PNG_H)
 
 
 
@@ -435,7 +441,7 @@ endif
 
 .SECONDEXPANSION:
 $(TARGETS): % : src/main.c $(srcdir)/%.o $$(MODULES_%) $(MODULES)
-	$(CC) $(LDFLAGS) $(CFLAGS) -Dmain_real=main_$@ -o $@ $+ $(FFTW_L) $(CUDA_L) $(BLAS_L) $(PNG_L) $(ISMRM_L) -lm
+	$(LINKER) $(LDFLAGS) $(CFLAGS) -Dmain_real=main_$@ -o $@ $+ $(FFTW_L) $(CUDA_L) $(BLAS_L) $(PNG_L) $(ISMRM_L) -lm
 #	rm $(srcdir)/$@.o
 
 UTESTS=$(shell $(root)/utests/utests-collect.sh ./utests/$@.c)

@@ -16,7 +16,11 @@
 #ifdef USE_MACPORTS
 #include <cblas_openblas.h>
 #else
+#ifndef USE_MKL
 #include <cblas.h>
+#else
+#include <mkl.h>
+#endif
 #endif
 
 #ifdef USE_CUDA

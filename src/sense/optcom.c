@@ -86,6 +86,7 @@ void gnu_sort_wrapper(float __complex__ * base, size_t len);
 float estimate_scaling_norm(float rescale, long imsize, complex float* tmpnorm, bool compat)
 {
 #ifdef USE_INTEL_KERNELS
+	UNUSED(compare_cmpl_magn);
 	gnu_sort_wrapper(tmpnorm, (size_t)imsize);
 #else
 	qsort(tmpnorm, (size_t)imsize, sizeof(complex float), compare_cmpl_magn);

@@ -223,7 +223,7 @@ void jtmodel_normal_benchmark_fast_parallel(
 
 void jtmodel_adjoint_benchmark_fast_parallel(
     const complex float * __restrict__ sens, 
-    complex float * dst, complex float * src,
+    complex float * dst, const complex float * src,
     const unsigned long dim0,
     const unsigned long dim1,
     const unsigned long nmaps,
@@ -239,7 +239,7 @@ void jtmodel_adjoint_benchmark_fast_parallel(
 
     for(int img = 0 ; img < nimg ; img++)
     {
-      complex float * ksp = src + map*dim0*dim1 + img*nmaps*dim0*dim1;
+      complex float * ksp = (complex float*)src + map*dim0*dim1 + img*nmaps*dim0*dim1;
       DftiComputeBackward(plan2d, ksp, cfksp3);
 
       complex float * cor0 = dst + 2 * img * dim0 * dim1;

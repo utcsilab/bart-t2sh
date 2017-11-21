@@ -328,8 +328,6 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
 	if (data->plan1d_0 == NULL) {
 
 		debug_printf(DP_DEBUG1, "planning\n");
-		complex float* tmp1 = md_alloc(DIMS, data->cfimg_dims, CFL_SIZE);
-		complex float* tmp2 = md_alloc(DIMS, data->cfimg_dims, CFL_SIZE);
 		((struct jtmodel_data*)data)->cfksp3 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
 		((struct jtmodel_data*)data)->cfksp4 = md_alloc(DIMS, data->cfksp_dims, CFL_SIZE);
 
@@ -341,8 +339,6 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
   		DftiSetValue(((struct jtmodel_data*)data)->plan1d_1, DFTI_PLACEMENT, DFTI_INPLACE);
   		DftiCommitDescriptor(((struct jtmodel_data*)data)->plan1d_1);;
 
-		md_free(tmp1);
-		md_free(tmp2);
 	}
 
 	const unsigned long nmaps = data->sens_dims[COIL_DIM];
@@ -373,7 +369,10 @@ static void jtmodel_del(const linop_data_t* _data)
 
 	operator_free(data->stkern_op);
 	md_free(data->cfksp);
+	md_free(data->cfksp3);
+	md_free(data->cfksp4);
 	md_free(data->sens);
+	//FIXME: free plan1d_0, plan1d_1
 	xfree(data);
 }
 

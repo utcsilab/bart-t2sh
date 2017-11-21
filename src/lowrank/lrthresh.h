@@ -3,7 +3,6 @@
  * a BSD-style license which can be found in the LICENSE file.
  */
 
-#include <complex.h>
 #include "misc/mri.h"
 
 #ifndef MAX_LEV
@@ -13,7 +12,7 @@
 struct operator_p_s;
 
 #ifdef USE_INTEL_KERNELS
-void mylrthresh(complex float *mat1, complex float *mat2, float lambda, int M,
+void mylrthresh(const _Complex float *mat1, _Complex float *mat2, float lambda, int M,
                 int N, int nimg, int nmap, int blksize, int shift0, int shift1);
 #endif
 
@@ -22,7 +21,7 @@ void mylrthresh(complex float *mat1, complex float *mat2, float lambda, int M,
 extern const struct operator_p_s* lrthresh_create(const long dims_lev[DIMS], _Bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, _Bool noise, int remove_mean, _Bool use_gpu);
 
 // Returns nuclear norm using lrthresh operator
-extern float lrnucnorm(const struct operator_p_s* op, const complex float* src);
+extern float lrnucnorm(const struct operator_p_s* op, const _Complex float* src);
 
 // Generates multiscale block sizes
 extern long multilr_blkdims(long blkdims[MAX_LEV][DIMS], unsigned long flags, const long dims[DIMS], int blkskip, long initblk);

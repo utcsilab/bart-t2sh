@@ -184,7 +184,9 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 
 		long blkdims[DIMS];
 		long shifts[DIMS];
+#ifndef USE_INTEL_KERNELS
 		long unshifts[DIMS];
+#endif
 		long zpad_dims[DIMS];
 		long M = 1;
 
@@ -202,7 +204,9 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 			else
 				shifts[i] = 0;
 
+#ifndef USE_INTEL_KERNELS
 			unshifts[i] = -shifts[i];
+#endif
 		}
 
 		long zpad_strs[DIMS];

@@ -123,7 +123,7 @@ void qrmysvthresh(complex float *buf, MKL_INT _M, MKL_INT _N, float *s,
   cunmqr("L", "N", &_M, &_N, &_N, q, &_M, tau, buf, &_M, work, &lwork, &info);
 }
 
-void mylrthresh(complex float *mat1, complex float *mat2, float lambda, int M,
+void mylrthresh(const complex float *mat1, complex float *mat2, float lambda, int M,
                 int N, int nimg, int nmap, int blksize, int shift0, int shift1) {
 #pragma omp parallel
   {

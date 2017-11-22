@@ -2,8 +2,8 @@ all: test_jtnormal test_jtnormal_adjoint test_lrthresh test_sort t2sh_intel.a
 
 CC=icc
 CXX=icpc
-CFLAGS=-g -O3 -ipo -no-prec-div -fp-model fast=2 -xCORE-AVX512 -mkl -DMKL_Complex8="complex float" -DMKL_Complex16="complex double" -qopenmp -std=c99 -vec-threshold0 -static
-CXXFLAGS=-g -O3 -ipo -no-prec-div -fp-model fast=2 -xCORE-AVX512 -mkl -DMKL_Complex8="complex float" -DMKL_Complex16="complex double" -qopenmp -vec-threshold0 -static
+CFLAGS=-g -O3 -ipo -no-prec-div -fp-model fast=2 -xHOST -mkl -DMKL_Complex8="complex float" -DMKL_Complex16="complex double" -qopenmp -std=c99 -vec-threshold0 -static
+CXXFLAGS=-g -O3 -ipo -no-prec-div -fp-model fast=2 -xHOST -mkl -DMKL_Complex8="complex float" -DMKL_Complex16="complex double" -qopenmp -vec-threshold0 -static
 LDFLAGS=-mkl -qopenmp
 
 .c.o:

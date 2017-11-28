@@ -64,7 +64,7 @@ DEF_TYPEID(stkern_data);
  * Create T2Sh kernel, Psi = Phi^H P Phi,
  * where Phi is the basis and P is the sampling pattern
  */
-static void create_stkern_mat(complex float* stkern_mat,
+extern void create_stkern_mat(complex float* stkern_mat,
 		const long pat_dims[DIMS], const complex float* pat,
 		const long bas_dims[DIMS], const complex float* bas)
 {

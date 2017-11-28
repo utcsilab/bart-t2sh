@@ -14,6 +14,10 @@ extern "C" {
 struct operator_s;
 struct linop_s;
 
+void create_stkern_mat(complex float* stkern_mat,
+		const long pat_dims[DIMS], const complex float* pat,
+		const long bas_dims[DIMS], const complex float* bas);
+
 struct linop_s* jtmodel_init(const long max_dims[DIMS],
 		const struct linop_s* sense_op,
 		const long pat_dims[DIMS], const _Complex float* pattern,

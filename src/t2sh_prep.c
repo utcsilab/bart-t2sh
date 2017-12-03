@@ -50,6 +50,7 @@ int main_t2sh_prep(int argc, char* argv[])
 	bool avg = false;
 	bool proj = false;
 	bool varTR = false;
+	bool do_fftmod = true;
 
 	const char* basis_file = NULL;
 	const char* vieworder_sort_file = NULL;
@@ -70,6 +71,7 @@ int main_t2sh_prep(int argc, char* argv[])
 		OPT_STRING('r', &TR_vals_file, "<file>", "Variable TRs <file>"),
 		OPT_UINT('R', &R, "R", "Number of unique TR values [Default R=1]"),
 		OPT_UINT('K', &K, "K", "Subspace size for -b [Default K=4]"),
+		OPT_CLEAR('n', &do_fftmod, "Don't apply fftmod along kz"),
 	};
 
 	cmdline(&argc, argv, 6, 6, usage_str, help_str, ARRAY_SIZE(opts), opts);
@@ -156,7 +158,8 @@ int main_t2sh_prep(int argc, char* argv[])
 			error("Error executing ksp_from_view_files\n");
 	}
 
-	fftmod(DIMS, ksp_dims, PHS2_FLAG, ksp, ksp);
+	if (do_fftmod)
+		fftmod(DIMS, ksp_dims, PHS2_FLAG, ksp, ksp);
 
 
 	// -----------------------------------------------------------

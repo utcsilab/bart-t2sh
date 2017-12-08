@@ -63,6 +63,14 @@ inline void TransposePanel(complex float * __restrict__ cor_out,
 	    cor_out2[cc + i*dim1] = cor_out[i + cc*dim0];
 	  }
 	}
+    // Do extra columns
+    for(int bb = nblk0*BLK ; bb < dim0 ; bb++)
+    {
+      for(int cc = 0 ; cc < _p ; cc++)
+      {
+	    cor_out2[cc + bb*dim1] = cor_out[bb + cc*dim0];
+      }
+    }
 }
 
 

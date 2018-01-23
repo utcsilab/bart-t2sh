@@ -2,7 +2,7 @@
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
  *
- * 2017 Jon Tamir <jtamir@eecs.berkeley.edu>
+ * 2017-2018 Jon Tamir <jtamir@eecs.berkeley.edu>
  */
 
 #include <math.h>
@@ -40,19 +40,14 @@
 
 #define VIEW_ORDER_R_ECLIPSE 9
 
-bool dbg_kr = false;
-bool kr_make_cal = true;
-int kr_dupsample = 1;
-bool kr_dup_e2s = false;
-int kr_cal_size= 8;
-float kr_partial_fourier = 1.;
-int kr_wy = 2;
-int kr_wz = 2;
+bool dbg_t2sh = false;
+bool t2sh_make_cal = true;
+int t2sh_num_masks = 1;
+bool t2sh_dup_e2s = false;
+int t2sh_cal_size= 8;
+float t2sh_partial_fourier = 1.;
 int sampling_pattern = 3;
-int kr_min_eddy = 2;
-float kr_jitter_power = 0.;
-int kr_jitter_start = 0;
-int kr_resample = 0;
+bool t2sh_flag = false;
 
 #define MAX_SIZE 262144
 float y_list[MAX_SIZE];
@@ -418,7 +413,7 @@ static void randperm(int n, int perm[])
 /**
  * Re-sort the views based on the starting echo index and jitter power
  */
-static void kr_jitter_views(int num_echoes, int num_trains, int skips_start, float jitter_power, int jitter_start, float* y_sort, float* z_sort)
+static void t2sh_jitter_views(int num_echoes, int num_trains, int skips_start, float jitter_power, int jitter_start, float* y_sort, float* z_sort)
 {
 
 	int local_jitter_start;
@@ -475,6 +470,7 @@ static void kr_jitter_views(int num_echoes, int num_trains, int skips_start, flo
 	}
 }
 
+#if 0
 /**
  * Create a spatial mask from the views.
  */
@@ -525,174 +521,7 @@ static void mask2vieworder(int num_trains, int num_echoes, int skips_start, int 
 
 	free(train_counter);
 }
-
-/**
- * Copy block from 2-dimensional input and store in output in row-major order
- */
-static void copy_block2row(int yres, int zres, int ystart, int ylen, int zstart, int zlen, int* out, const int* in)
-{
-	UNUSED(yres);
-
-	int yy, zz;
-	int i = 0;
-
-	for (yy = 0; yy < ylen; yy++)
-	{
-		for (zz = 0; zz < zlen; zz++)
-		{
-			out[i] = in[(ystart+yy)*zres + zstart + zz];
-			i++;
-		}
-	}
-}
-
-/**
- * Reshape contiguous input data into a block and copy into output
- */
-static void copy_row2block(int yres, int zres, int ystart, int ylen, int zstart, int zlen, int* out, const int* in)
-{
-	UNUSED(yres);
-
-	int yy, zz;
-	int i = 0;
-
-	for (yy = 0; yy < ylen; yy++)
-	{
-		for (zz = 0; zz < zlen; zz++)
-		{
-			out[(ystart+yy)*zres + zstart + zz] = in[i];
-			i++;
-		}
-	}
-}
-
-/**
- * Transform between image matrix and distinct blocks arranged in a spiral order. Each block is vectorized into a row
- * Note: (yres * zres) / (wy * wz) must be an integer
- * @param im2sprow: 0 means go from blocks to image, 1 means go from image to blocks
- */
-static void im_sprow(int im2sprow, int wy, int wz, int yres, int zres, int* out, const int* in)
-{
-	int ycount = yres / wy;
-	int zcount = zres / wz;
-	int ii = -1;
-	int yoff = 0;
-	int zoff = -wz;
-	int yborder = 0;
-	int zborder = 0;
-	int jj;
-
-	while ( (ycount > 0) && (zcount > 0) )
-	{
-		if (zcount > 0)
-		{
-			/* move right */
-			for (jj = 0; jj < zcount; jj++)
-			{
-				zoff += wz;
-				ii++;
-				if (im2sprow)
-					copy_block2row(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out + ii*wy*wz, in);
-				else
-					copy_row2block(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out, in + ii*wy*wz);
-			}
-
-			/* move down */
-			for (jj = 0; jj < ycount-1; jj++)
-			{
-				yoff += wy;
-				ii++;
-				if (im2sprow)
-					copy_block2row(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out + ii*wy*wz, in);
-				else
-					copy_row2block(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out, in + ii*wy*wz);
-			}
-		}
-
-		if (zcount - 1 > 0)
-		{
-			/* move left */
-			for (jj = 0; jj < zcount-1; jj++)
-			{
-				zoff -= wz;
-				ii++;
-				if (im2sprow)
-					copy_block2row(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out + ii*wy*wz, in);
-				else
-					copy_row2block(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out, in + ii*wy*wz);
-			}
-
-			/* move up */
-			for (jj = 0; jj < ycount-2; jj++)
-			{
-				yoff -= wy;
-				ii++;
-				if (im2sprow)
-					copy_block2row(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out + ii*wy*wz, in);
-				else
-					copy_row2block(yres, zres, (yborder+yoff), wy, (zborder+zoff), wz, out, in + ii*wy*wz);
-			}
-		}
-
-		/* shrink borders and reset */
-		ycount -= 2;
-		zcount -= 2;
-		yborder += wy;
-		zborder += wz;
-		yoff = 0;
-		zoff = -wz;
-	}
-}
-
-/**
- * Helper function: image to spiral blocks
- */
-static void im2sprow(int wy, int wz, int yres, int zres, int* out, const int* in)
-{
-	im_sprow(1, wy, wz, yres, zres, out, in);
-}
-
-/**
- * Helper function: spiral blocks to image
- */
-static void sprow2im(int wy, int wz, int yres, int zres, int* out, const int* in)
-{
-	im_sprow(0, wy, wz, yres, zres, out, in);
-}
-
-/**
- * Assign each phase encode an index by traversing the block-ordered data
- */
-static void assign_echotrain(int yres, int zres, int num_echoes, int* B_idx, const int* B)
-{
-	int idx = 0;
-	int runsum = 0;
-	int ii = yres*zres - 1;
-
-	while (ii >= 0)
-	{
-		if (runsum < num_echoes)
-		{
-			if (0 != B[ii])
-			{
-				B_idx[ii] = idx;
-				runsum++;
-			}
-			else
-			{
-				B_idx[ii] = -1;
-			}
-
-			ii -= 1;
-		}
-		else
-		{
-			idx += 1;
-			runsum = 0;
-		}
-	}
-}
-
+#endif
 
 
 /**
@@ -855,7 +684,7 @@ static void crawl_assign_cal(int num_trains, int num_echoes, int train, int echo
    Would probably be better to use crawl_assign for all of the first echo as well,
    but need to check against aspect ratio
    */
-static int kr_cal_e2s(int mode, int num_trains, int skips_start, int num_echoes, int yres, int zres, float* y_sort, float* z_sort)
+static int t2sh_cal_e2s(int mode, int num_trains, int skips_start, int num_echoes, int yres, int zres, float* y_sort, float* z_sort)
 {
 	int i = 0;
 	int j = 0;
@@ -914,20 +743,20 @@ static int kr_cal_e2s(int mode, int num_trains, int skips_start, int num_echoes,
 		}
 	}
 
-	if (dbg_kr)
-		printf("[DBG_KR] (py, pz) = (%d, %d)\n", py, pz);
+	if (dbg_t2sh)
+		printf("[DBG_T2SH] (py, pz) = (%d, %d)\n", py, pz);
 
 	/* some points may not be assigned, because the number of echo trains doesn't form a perfect rectangle */
 	direction = 0;
 	if (train < num_trains) {
 
-		if (dbg_kr)
-			printf("[DBG_KR] train = %d, num_trains = %d. Crawling for remaining %d trains\n", train, num_trains, num_trains - train);
+		if (dbg_t2sh)
+			printf("[DBG_T2SH] train = %d, num_trains = %d. Crawling for remaining %d trains\n", train, num_trains, num_trains - train);
 		crawl_assign_cal(num_trains, num_echoes, train, 0, &direction, &py, &pz, zres, mask, y_sort, z_sort);
 	}
 
-	if (dbg_kr)
-		printf("[DBG_KR] (py, pz) = (%d, %d)\n", py, pz);
+	if (dbg_t2sh)
+		printf("[DBG_T2SH] (py, pz) = (%d, %d)\n", py, pz);
 
 	if (mode == 0) {
 
@@ -1382,6 +1211,7 @@ static int regenVDPoissonSampling(int num_trains, int *csmask, float yfov, float
 }
 
 
+#if 0
 static bool select_views(
     int    yres,           /* I */
     int    zres,           /* I */
@@ -1487,112 +1317,16 @@ static bool select_views(
 
     return SUCCESS;
 }
-
-static void orderviews_kr_mineddy2(
-		int* mask,
-		int* B,
-		int* B_idx,
-		int num_trains,
-		int num_echoes,
-		int skips_start,
-		int yres_pad,
-		int zres_pad,
-		int wy,
-		int wz,
-		float* y_sort,
-		float* z_sort
-		)
-{
-
-	int i = 0;
-
-	// transform the mask into blocks
-	im2sprow(wy, wz, yres_pad, zres_pad, B, mask);
-
-	// assign phase encodes to echo trains in block-wise order
-	assign_echotrain(yres_pad, zres_pad, num_echoes - skips_start, B_idx, B);
-
-	// transform back to spatial sampling order
-	sprow2im(wy, wz, yres_pad, zres_pad, mask, B_idx);
-
-	// map back to view orders
-	// need to clear first since the final echo train might be short
-	for (i = 0; i < num_trains * num_echoes; i++)
-	{
-		y_sort[i] = -1;
-		z_sort[i] = -1;
-	}
-
-	mask2vieworder(num_trains, num_echoes, skips_start, yres_pad, zres_pad, y_sort, z_sort, mask);
-
-}
-
-
-static void orderviews_kr_mineddy(
-		int num_trains,
-		int num_echoes,
-		int skips_start,
-		int yres,
-		int zres,
-		int wy,
-		int wz,
-		float* y_sort,
-		float* z_sort
-		)
-{
-
-	int* mask = NULL;
-	int* B = NULL;
-	int* B_idx = NULL;
-
-	int i = 0;
-
-#if 1
-	// pad memory for case where dimensions are not divisible by window size
-	//int yres_pad = ceil(((float)yres) / wy) * wy;
-	//int zres_pad = ceil(((float)zres) / wz) * wz;
-	int yres_pad = (int)(((float)yres) / wy + 1) * wy;
-	int zres_pad = (int)(((float)zres) / wz + 1) * wz;
-#else
-	int yres_pad = yres;
-	int zres_pad = zres;
 #endif
 
-	if (dbg_kr) {
-		printf("[DBG_KR] yres = %d\tyres_pad = %d\n", yres, yres_pad);
-		printf("[DBG_KR] zres = %d\tzres_pad = %d\n", zres, zres_pad);
-	}
-
-	mask = (int*)malloc(yres_pad * zres_pad * sizeof(int));
-	B = (int*)malloc(yres_pad * zres_pad * sizeof(int));
-	B_idx = (int*)malloc(yres_pad * zres_pad * sizeof(int));
-
-	for (i = 0; i < yres_pad * zres_pad; i++)
-	{
-		mask[i] = 0;
-		B[i] = 0;
-		B_idx[i] = 0;
-	}
-
-	// create a spatial sampling mask from the view orders
-	vieworder2mask(num_trains, num_echoes, yres_pad, zres_pad, mask, y_sort, z_sort);
-
-	orderviews_kr_mineddy2(mask, B, B_idx, num_trains, num_echoes, skips_start, yres_pad, zres_pad, wy, wz, y_sort, z_sort);
-
-	free(mask);
-	free(B);
-	free(B_idx);
-}
 
 
-static void orderviews_kr_mineddy1(
+static void orderviews_t2sh(
 		int num_trains,
 		int num_echoes,
 		int skips_start,
 		int yres,
 		int zres,
-		int wy,
-		int wz,
 		int cal_size,
 		int my_sampling_pattern,
 		int* mask,
@@ -1622,26 +1356,26 @@ static void orderviews_kr_mineddy1(
 
 	int* rlist = NULL;
 
-	float my_partial_fourier = kr_partial_fourier;
+	float my_partial_fourier = t2sh_partial_fourier;
 
 	/* approx accel to get num_trains in each mask */
 	fudge = 1.1;
-#if 0
+#if 1
 	accel = sqrtf( (float)yres * (float)zres * m_pi / (4 * fudge * num_trains * num_echoes) );
 
 	float y_accel = accel;
 	float z_accel = accel;
 
-	if (dbg_kr)
-		printf("[DBG_KR] vdpoisson scheme. accel = %f\n", accel);
+	if (dbg_t2sh)
+		printf("[DBG_T2SH] vdpoisson scheme. accel = %f\n", accel);
 #else
 	float y_accel = (float)zres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes)); 
 	float z_accel = (float)yres * sqrtf(m_pi) / (2 * sqrtf(fudge * num_trains * num_echoes));
 	accel = sqrtf(y_accel * z_accel);
 
-	if (dbg_kr) {
+	if (dbg_t2sh) {
 
-		printf("[DBG_KR] vdpoisson scheme. accel = %f, yaccel=%f, zaccel=%f\n", accel, y_accel, z_accel);
+		printf("[DBG_T2SH] vdpoisson scheme. accel = %f, yaccel=%f, zaccel=%f\n", accel, y_accel, z_accel);
 	}
 #endif
 
@@ -1655,8 +1389,8 @@ static void orderviews_kr_mineddy1(
 	num_points = regenVDPoissonSampling(num_trains * num_echoes, csmask, yfov, zfov, yres, zres, y_accel, z_accel, cal_size,
 			cut_corners, ran_seed++, my_sampling_pattern, my_partial_fourier);
 
-	if (dbg_kr)
-		printf("[DBG_KR] num_points = %d\n", (int)num_points);
+	if (dbg_t2sh)
+		printf("[DBG_T2SH] num_points = %d\n", (int)num_points);
 
 	/* randomly prune the mask until it has exactly num_trains points */
 	list = (int*)malloc(num_points * sizeof(int));
@@ -1666,22 +1400,10 @@ static void orderviews_kr_mineddy1(
 	randperm(yres * zres, rlist);
 
 
-#if 1
-	// pad memory for case where dimensions are not divisible by window size
-	//int yres_pad = ceil(((float)yres) / wy) * wy;
-	//int zres_pad = ceil(((float)zres) / wz) * wz;
-	int yres_pad = (int)(((float)yres) / wy + 1) * wy;
-	int zres_pad = (int)(((float)zres) / wz + 1) * wz;
-#else
-	UNUSED(wy);
-	UNUSED(wz);
-	int yres_pad = yres;
-	int zres_pad = zres;
-#endif
 
-	if (dbg_kr) {
-		printf("[DBG_KR] yres = %d\tyres_pad = %d\n", yres, yres_pad);
-		printf("[DBG_KR] zres = %d\tzres_pad = %d\n", zres, zres_pad);
+	if (dbg_t2sh) {
+		printf("[DBG_T2SH] yres = %d\tyres = %d\n", yres, yres);
+		printf("[DBG_T2SH] zres = %d\tzres = %d\n", zres, zres);
 	}
 
 	count = 0;
@@ -1694,10 +1416,15 @@ static void orderviews_kr_mineddy1(
 
 			if (in_cal_region(ii, jj, cal_size, yres, zres, yfov, zfov)) {
 
-				mask[ii*zres_pad + jj] = 1;
+				mask[ii*zres + jj] = 1;
 				count++;
 
 				csmask[ii*zres + jj] = 0;
+			}
+
+			if (count == num_trains * num_echoes) {
+				//printf("count == num_trains * num_echoes == %d\n", num_trains * num_echoes);
+				break;
 			}
 
 		}
@@ -1717,7 +1444,7 @@ static void orderviews_kr_mineddy1(
 
 			if (list[count2] != 0) {
 
-				mask[ii*zres_pad + jj] = 1;
+				mask[ii*zres + jj] = 1;
 				count++;
 			}
 			count2++;
@@ -1738,14 +1465,12 @@ static void orderviews_kr_mineddy1(
 }
 
 
-static void orderviews_kr_mineddy_genmask(
+static void orderviews_genmask(
 		int num_trains,
 		int num_echoes,
 		int skips_start,
 		int yres,
 		int zres,
-		int wy,
-		int wz,
 		int cal_size,
 		int my_sampling_pattern,
 		float* y_sort,
@@ -1755,37 +1480,37 @@ static void orderviews_kr_mineddy_genmask(
 {
 
 	int* mask = NULL;
-	int* B = NULL;
-	int* B_idx = NULL;
-
-	int yres_pad = yres;
-	int zres_pad = zres;
 	int i = 0;
+	int ii = 0;
+	int jj = 0;
+	int c = 0;
 
-	// pad memory for case where dimensions are not divisible by window size
-	//int yres_pad = ceil(((float)yres) / kr_wy) * kr_wy;
-	//int zres_pad = ceil(((float)zres) / kr_wz) * kr_wz;
-	yres_pad = (int)(((float)yres) / wy + 1) * wy;
-	zres_pad = (int)(((float)zres) / wz + 1) * wz;
+	mask = (int*)malloc(yres * zres * sizeof(int));
 
-	mask = (int*)malloc(yres_pad * zres_pad * sizeof(int));
-	B = (int*)malloc(yres_pad * zres_pad * sizeof(int));
-	B_idx = (int*)malloc(yres_pad * zres_pad * sizeof(int));
-
-	for (i = 0; i < yres_pad * zres_pad; i++)
-	{
+	for (i = 0; i < yres * zres; i++)
 		mask[i] = 0;
-		B[i] = 0;
-		B_idx[i] = 0;
+
+	orderviews_t2sh(num_trains, num_echoes, skips_start, yres, zres, cal_size, my_sampling_pattern, mask, ran_seed);
+
+	for (i = 0; i < yres * zres; i++) {
+
+		ii = i / zres;
+		jj = i - ii * zres;
+
+		if (1 == mask[i]) {
+
+			y_sort[c] = ii;
+			z_sort[c] = jj;
+			c++;
+		}
 	}
 
-	orderviews_kr_mineddy1(num_trains, num_echoes, skips_start, yres, zres, wy, wz, cal_size, my_sampling_pattern, mask, ran_seed);
-	orderviews_kr_mineddy2(mask, B, B_idx, num_trains, num_echoes, skips_start, yres_pad, zres_pad, wy, wz, y_sort, z_sort);
+	debug_printf(DP_DEBUG1, "c = %d, num_trains = %d, num_echoes = %d\n", c, num_trains, num_echoes);
+	assert(c == num_trains * num_echoes);
 
 	free(mask);
-	free(B);
-	free(B_idx);
 }
+
 
 static void swap(float* y_sort, float* z_sort, int idx1, int idx2)
 {
@@ -1809,7 +1534,7 @@ static float distsq(float y1, float z1, float y2, float z2)
 }
 
 
-static void orderviews_r_knn(
+static void orderviews_knn(
 		int num_trains,
 		int num_echoes,
 		int skips_start,
@@ -1817,7 +1542,6 @@ static void orderviews_r_knn(
 		float* z_sort
 		)
 {
-	UNUSED(skips_start);
 
 	float y = 0.;
 	float z = 0.;
@@ -1845,12 +1569,12 @@ static void orderviews_r_knn(
 
 	for (train = 0; train < num_trains; train++) {
 
-		y = y_sort[train*num_echoes + 0];
-		z = z_sort[train*num_echoes + 0];
+		y = y_sort[train*num_echoes + skips_start];
+		z = z_sort[train*num_echoes + skips_start];
 
 		if (y != -1 && z != -1) {
 
-			for (echo = 1; echo < num_echoes; echo++) {
+			for (echo = skips_start + 1; echo < num_echoes; echo++) {
 
 				min_train = train;
 
@@ -1895,7 +1619,81 @@ static void orderviews_r_knn(
 
 /*peng, jtamir^^^^^^^^^^*/
 
+static void sort_radius(
+		int    num_views,       /* I */
+		int    yres,            /* I */
+		int    zres,            /* I */
+		int    echo_dir,        /* I */  
+		int    encode_flag,     /* I */ /* k-space encode mode. Cube variable TE MM */
+		float  axis_ratio,      /* I */ /* Long to short axis ratio for eclipse ordering. Cube variable TE MM */
+		float* y_list,          /* I */
+		float* z_list          /* I */
+		)
+{
+	int   list_index = 0;
+	float y = 0.0;
+	float z = 0.0;
+	float r = 0.0;
+	float r_max = 0.0;
+	float beta = 0.0;
+	float theta_loc = 0.0;
+	float ycenter = yres/2 - 0.5; /* changed "+" to "-" because indexing starts at 0 now : 03-May-07 */
+	float zcenter = zres/2 - 0.5; /* changed "+" to "-" because indexing starts at 0 now : 03-May-07 */
 
+	float* s_list;
+	float* r_list;
+
+	/* Set the start point at the k-space edge. Cube variable TE MM */
+	if (VIEW_ORDER_R_ECLIPSE == encode_flag) { ycenter = 0.5; }
+
+	s_list      = (float*)malloc(num_views * sizeof(float));
+	r_list      = (float*)malloc(num_views * sizeof(float));
+
+
+	/*** STEP 1: Calculate RADIUS and THETA ***/
+
+	for (list_index=0; list_index<num_views; list_index++)
+	{
+
+		y = y_list[list_index];
+		z = z_list[list_index];
+
+		/* calculate radius  */
+		/* Added long to short axis ratio */ /* Cube variable TE MM */
+		float yoff = (float)y-ycenter;
+		float zoff = ((float)z-zcenter)*axis_ratio*(float)yres/zres;
+		r = sqrt(yoff*yoff + zoff*zoff);
+		r_list[list_index] = r;
+		if (r > r_max) r_max = r;
+
+		/* calculate theta */  
+		/* Added long to short axis ratio */ /* Cube variable TE MM */
+		beta = atan( fabs((float)z-zcenter) * axis_ratio / fabs((float)y-ycenter) );
+
+		if      ( (y > ycenter) && (z > zcenter) ) /* first quadrant:   -pi   ->  -pi/2 */
+			theta_loc = -pi + beta;
+		else if ( (y < ycenter) && (z > zcenter) ) /* second quadrant:  -pi/2 ->  0     */
+			theta_loc = - beta;
+		else if ( (y < ycenter) && (z < zcenter) ) /* third quadrant:   0     -> pi/2   */
+			theta_loc = beta;
+		else if ( (y > ycenter) && (z < zcenter) ) /* fourth quadrant:  pi/2  ->  pi    */
+			theta_loc = pi - beta;
+
+		/* Flip theta for 180 degree. Theta should be between -90 and +90 degree. */ /* Cube variable TE MM */
+		if (VIEW_ORDER_R_ECLIPSE == encode_flag) theta_loc -= pi;
+		if (theta_loc < -pi) theta_loc += 2*pi;
+
+		s_list[list_index] = theta_loc;   
+	}
+
+
+	/*** STEP 2: Sort by R ***/
+
+	sort_vectors(0, num_views-1, echo_dir, r_list, y_list, z_list, s_list);  /* passed echo_dir argument : RFB 26-Oct-07 */ 
+
+	free(s_list);
+	free(r_list);
+}
 
 /* updated -- r then theta sort : RFB 17-Jul-07 */
 /* removed unused yover & lope_fraction args; added echo_dir arg : RFB 26-Oct-07 */
@@ -1910,8 +1708,7 @@ static void orderviews_r(
 		int    echo_dir,        /* I */  
 		int    encode_flag,     /* I */ /* k-space encode mode. Cube variable TE MM */
 		float  axis_ratio,      /* I */ /* Long to short axis ratio for eclipse ordering. Cube variable TE MM */
-		int    my_kr_min_eddy,
-		int    my_kr_resample,
+		int    my_t2sh_flag,
 		float* y_list,          /* I */
 		float* z_list,          /* I */
 		float* y_sort_dab,      /* O */
@@ -1920,18 +1717,12 @@ static void orderviews_r(
 		float* z_sort           /* O */
 		)
 {
-	UNUSED(my_kr_resample);
 	int   list_index;
 	int   sort_index;
 	int   i, n, train, echo, skips_end_total;
 	int   index_start, index_end;
 	int   views_to_sort;
 	float r_max = 0.0; /* Cube BB MM */
-
-	/*peng to introduce jittering along echoes for kr sampling for UCBerkeley 2013.11.03*/
-	/* modified by jtamir, 2014.03.05*/
-	float jitter_power = kr_jitter_power;
-	int jitter_start = kr_jitter_start;
 
 	/*peng, jtamir^^^^^^^^^^*/
 
@@ -2154,18 +1945,10 @@ static void orderviews_r(
 
 	/*peng to introduce jittering along echoes for kr sampling for UCBerkeley 2013.11.03*/
 
-	/* jtamir add phase encode resampling 2014.10.02 */
-	if (my_kr_min_eddy) {
-
-		/* if using eddy current reduction, the view orders must be fully jittered */
-		jitter_power = 1.;
-		jitter_start = 0;
-
-		orderviews_kr_mineddy(num_trains, num_echoes, skips_start, yres, zres, kr_wy, kr_wz, y_sort, z_sort);
-	}
 
 	/* jitter */
-	kr_jitter_views(num_echoes, num_trains, skips_start, jitter_power, jitter_start, y_sort, z_sort);
+	if (my_t2sh_flag)
+		t2sh_jitter_views(num_echoes, num_trains, skips_start, 1., 0, y_sort, z_sort);
 
 	if (y_sort_dab != NULL && z_sort_dab != NULL) {
 		copy_vector(num_trains*num_echoes, y_sort, y_sort_dab);
@@ -2236,23 +2019,20 @@ static void orderviews_r_helper(
 	   */
 
 
-	if (dbg_kr) {
-		printf("[DBG_KR] kr_dupsample = %d\n", kr_dupsample);
-		printf("[DBG_KR] skips_start = %d\n", skips_start);
+	if (dbg_t2sh) {
+		printf("[DBG_T2SH] t2sh_num_masks = %d\n", t2sh_num_masks);
+		printf("[DBG_T2SH] skips_start = %d\n", skips_start);
 	}
 
-	if (kr_dupsample > 1) {
+	if (t2sh_num_masks > 1) {
 
-		if (dbg_kr)
-			printf("[DBG_KR] I'm in kr_dupsample\n");
+		if (dbg_t2sh)
+			printf("[DBG_T2SH] I'm in t2sh_num_masks\n");
 
 		/* ran_seed = 1251046800; -- replace with function parameter -- jtamir 072016 */
 
-#if 0
-		/* perform a standard orderviews to start */
-		orderviews_r(num_views, num_trains, num_echoes, 0, yres, zres, echo_dir, encode_flag, axis_ratio, 0, 0, y_list, z_list, y_sort_dab, z_sort_dab, y_sort, z_sort);
-#else
-		/* first copy y_list and z_list directly */
+
+		/* initialize */
 		for (train = 0; train < num_trains; train++) {
 
 			for (echo = 0; echo < num_echoes; echo++) {
@@ -2265,14 +2045,13 @@ static void orderviews_r_helper(
 
 			}
 		}
-#endif
 
 
-		if (kr_make_cal) {
+		if (t2sh_make_cal) {
 
 			/* make our own skipped echoes calibration region */
 			/* FIXME: check for failure */
-			kr_cal_e2s(kr_dup_e2s, num_trains, skips_start, num_echoes, yres, zres, y_sort, z_sort);
+			t2sh_cal_e2s(t2sh_dup_e2s, num_trains, skips_start, num_echoes, yres, zres, y_sort, z_sort);
 
 		}
 		else {
@@ -2282,7 +2061,7 @@ static void orderviews_r_helper(
 
 				for (echo = 1; echo < skips_start; echo++) {
 
-					if (kr_dup_e2s) {
+					if (t2sh_dup_e2s) {
 
 						// duplicate the first echo for each skipped echo
 						y_sort[train*num_echoes + echo] = y_sort[train*num_echoes + 0];
@@ -2298,7 +2077,7 @@ static void orderviews_r_helper(
 		}
 
 		/* round up to nearest integer */
-		num_echoes_dup = (num_echoes_adj + kr_dupsample - 1) / kr_dupsample;
+		num_echoes_dup = (num_echoes_adj + t2sh_num_masks - 1) / t2sh_num_masks;
 
 		y_list_dup = (float*)malloc( num_trains * num_echoes_dup * sizeof(float));
 		z_list_dup = (float*)malloc( num_trains * num_echoes_dup * sizeof(float));
@@ -2309,55 +2088,59 @@ static void orderviews_r_helper(
 		y_sort_dab_dup = (float*)malloc( num_trains * num_echoes_dup * sizeof(float));
 		z_sort_dab_dup = (float*)malloc( num_trains * num_echoes_dup * sizeof(float));
 
-		for (i = 0; i < kr_dupsample; i++) {
+		for (i = 0; i < t2sh_num_masks; i++) {
 
 			num_echoes_gen = remaining_echoes - num_echoes_dup > 0 ? num_echoes_dup : remaining_echoes;
 			remaining_echoes -= num_echoes_gen;
 
-			if (dbg_kr)
-				printf("[DBG_KR] num_echoes = %d, num_echoes_adj = %d, num_echoes_dup = %d, num_echoes_gen = %d, remaining_echoes = %d\n", num_echoes, num_echoes_adj, num_echoes_dup, num_echoes_gen, remaining_echoes);
+			if (dbg_t2sh)
+				printf("[DBG_T2SH] num_echoes = %d, num_echoes_adj = %d, num_echoes_dup = %d, num_echoes_gen = %d, remaining_echoes = %d\n", num_echoes, num_echoes_adj, num_echoes_dup, num_echoes_gen, remaining_echoes);
 
-			for (q = 0; q < num_trains * num_echoes_dup; q++) {
-				y_sort_dup[q] = -1;
-				z_sort_dup[q] = -1;
-			}
-
-			orderviews_kr_mineddy_genmask(num_trains, num_echoes_gen, 0, yres, zres, kr_wy, kr_wz, kr_cal_size, sampling_pattern, y_sort_dup, z_sort_dup, ran_seed++);
-			kr_jitter_views(num_echoes_dup, num_trains, 0, 1., 0, y_sort_dup, z_sort_dup);
-
-			if (kr_min_eddy == 0) {
-				if (dbg_kr)
-					printf("[DBG_KR] keep a center-out ordering\n");
-
+			if (num_echoes_gen > 0) {
 				for (q = 0; q < num_trains * num_echoes_dup; q++) {
-
-					y_list_dup[q] = y_sort_dup[q];
-					z_list_dup[q] = z_sort_dup[q];
-
-					y_sort_dab_dup[q] = y_sort_dup[q];
-					z_sort_dab_dup[q] = z_sort_dup[q];
+					y_sort_dup[q] = -1;
+					z_sort_dup[q] = -1;
 				}
 
-				orderviews_r(num_trains * num_echoes_gen, num_trains, num_echoes_gen, 0, yres, zres, echo_dir, encode_flag, axis_ratio, 0, 0, y_list_dup, z_list_dup, y_sort_dab_dup, z_sort_dab_dup, y_sort_dup, z_sort_dup);
 
-			}
+				orderviews_genmask(num_trains, num_echoes_gen, 0, yres, zres, t2sh_cal_size, sampling_pattern, y_sort_dup, z_sort_dup, ran_seed++);
 
-			count = 0;
+				if (!t2sh_flag) {
+					if (dbg_t2sh)
+						printf("[DBG_T2SH] keep a center-out ordering\n");
 
-			for (train = 0; train < num_trains; train++) {
+					for (q = 0; q < num_trains * num_echoes_dup; q++) {
 
-				for (echo = 0; echo < num_echoes_gen; echo++) {
+						y_list_dup[q] = y_sort_dup[q];
+						z_list_dup[q] = z_sort_dup[q];
 
-					if (  y_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] != -1 &&
-							z_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] != -1 ) {
-
-						y_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] = y_sort_dup[ count ];
-						z_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] = z_sort_dup[ count ];
+						y_sort_dab_dup[q] = y_sort_dup[q];
+						z_sort_dab_dup[q] = z_sort_dup[q];
 					}
-					count++;
+
+					orderviews_r(num_trains * num_echoes_gen, num_trains, num_echoes_gen, 0, yres, zres, echo_dir, encode_flag, axis_ratio, 0, y_list_dup, z_list_dup, y_sort_dab_dup, z_sort_dab_dup, y_sort_dup, z_sort_dup);
+
 				}
 
+				count = 0;
 
+				debug_printf(DP_DEBUG1, "skips start is %d\n", skips_start);
+
+				for (train = 0; train < num_trains; train++) {
+
+					for (echo = 0; echo < num_echoes_gen; echo++) {
+
+						if (  y_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] != -1 &&
+								z_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] != -1 ) {
+
+							y_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] = y_sort_dup[ count ];
+							z_sort[ train*num_echoes + (i * num_echoes_dup) + skips_start + echo ] = z_sort_dup[ count ];
+						}
+						count++;
+					}
+
+
+				}
 			}
 		}
 
@@ -2370,18 +2153,17 @@ static void orderviews_r_helper(
 		free(y_sort_dab_dup);
 		free(z_sort_dab_dup);
 
-		if (kr_min_eddy == 2) {
+		if (t2sh_flag) {
 
-			if (dbg_kr)
-				printf("[DBG_KR] knn sort\n");
+			if (dbg_t2sh)
+				printf("[DBG_T2SH] knn sort\n");
 
-			orderviews_r_knn(num_trains, num_echoes, skips_start, y_sort, z_sort);
+			sort_radius(num_echoes, yres, zres, echo_dir, encode_flag, axis_ratio, y_sort, z_sort);
+			orderviews_knn(num_trains, num_echoes, 0, y_sort, z_sort);
 		}
 	}
 	else
-		orderviews_r(num_views, num_trains, num_echoes, skips_start, yres, zres, echo_dir, encode_flag, axis_ratio, kr_min_eddy, kr_resample, y_list, z_list, y_sort_dab, z_sort_dab, y_sort, z_sort);
-
-
+		orderviews_r(num_views, num_trains, num_echoes, skips_start, yres, zres, echo_dir, encode_flag, axis_ratio, t2sh_flag, y_list, z_list, y_sort_dab, z_sort_dab, y_sort, z_sort);
 
 }
 
@@ -2405,13 +2187,13 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 
 		OPT_UINT('Y', &yres, "size", "size dimension 1"),
 		OPT_UINT('Z', &zres, "size", "size dimension 2"),
-		OPT_SET('v', &dbg_kr, "verbose"),
-		OPT_INT('d', &kr_dupsample, "num", "number of times to duplicate sampling mask"),
-		OPT_SET('e', &kr_dup_e2s, "duplicate the first echo for each skipped echo"),
-		OPT_INT('C', &kr_cal_size, "size", "calibration region size"),
-		OPT_FLOAT('f', &kr_partial_fourier, "frac", "partial fourier fraction"),
+		OPT_SET('v', &dbg_t2sh, "verbose"),
+		OPT_INT('d', &t2sh_num_masks, "num", "number of sampling masks"),
+		OPT_SET('e', &t2sh_dup_e2s, "duplicate the first echo for each skipped echo"),
+		OPT_INT('C', &t2sh_cal_size, "size", "calibration region size for each pattern"),
+		OPT_FLOAT('f', &t2sh_partial_fourier, "frac", "partial fourier fraction"),
 		OPT_INT('V', &sampling_pattern, "num", "variable density level"),
-		OPT_INT('m', &kr_min_eddy, "num", "0 - center-out, 1-random mineddy, 2-random knn"),
+		OPT_SET('m', &t2sh_flag, "turn on t2 shuffling randomized sampling"),
 		OPT_INT('r', &ran_seed, "seed", "random seed"),
 		OPT_UINT('s', &skips_start, "E2S", "echoes to skip"),
 		OPT_UINT('T', &num_trains, "trains", "number of echo trains"),
@@ -2433,7 +2215,6 @@ int main_t2sh_gen_mask(int argc, char* argv[])
 	long num_views = num_trains * num_echoes;
 	debug_printf(DP_DEBUG1, "num_views=%d ny*nz=%d\n", num_views, yres*zres);
 
-	assert(kr_min_eddy != 1); // deprecated
 	assert(num_views < (yres * zres * M_PI / 4.));
 
 	for (long i = 0; i < MAX_SIZE; i++) {

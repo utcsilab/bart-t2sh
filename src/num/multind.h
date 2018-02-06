@@ -94,6 +94,7 @@ extern void* md_alloc_sameplace(unsigned int D, const long dimensions[__VLA(D)],
 extern void md_free(const void* p);
 
 
+extern _Bool md_calc_all_modulo(unsigned int D, const long dim[__VLA(D)], const long modulo);
 extern long md_calc_size(unsigned int D, const long dimensions[__VLA(D)]);
 extern long* md_calc_strides(unsigned int D, long str[__VLA(D)], const long dim[__VLA(D)], size_t size);
 extern long md_calc_offset(unsigned int D, const long strides[__VLA(D)], const long position[__VLA(D)]);

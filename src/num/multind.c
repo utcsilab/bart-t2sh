@@ -238,6 +238,22 @@ bool md_next(unsigned int D, const long dims[D], unsigned long flags, long pos[D
 }
 
 
+/**
+ * Returns true if all are even dimensions for those with effective size (>1)
+ *
+ * @param D number of dimensions
+ * @param dim dimensions array
+ */
+bool md_calc_all_modulo(unsigned int D, const long dim[D], const long modulo)
+{
+	bool even = true;
+	for (unsigned int d = 0; d < D; ++d)
+		even &= (dim[d] % modulo == 0) | (dim[d] == 1);
+
+	return even;
+}
+
+
 
 /**
  * Returns offset for position in a multidimensional array

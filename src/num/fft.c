@@ -104,6 +104,115 @@ static void fftmod2_r(unsigned int N, const long dims[N], unsigned long flags, c
 }
 
 
+static unsigned int md_find_first_case_element(unsigned int N, const long dims[N])
+{
+	unsigned int i;
+	// Find the first non-zero dimension
+	for (i = 0; i < N; ++i) {
+		if (dims[i] != 1)
+			return i;
+	}
+
+	return N-1; // All dimensions are singletons.
+}
+
+static unsigned int md_find_last_case_element(unsigned int N, unsigned long flags, unsigned int first)
+{
+	// Find the last dimension of the contiguous group
+	unsigned int j = MD_IS_SET(flags, first) != 0; // This is the case
+	unsigned int k;
+	for (k = first + 1; k < N; ++k)
+		if ((MD_IS_SET(flags, k) != 0) != j)
+			break;
+	return --k;
+}
+
+
+static void fftmod_even(unsigned int N, const long dims[N], unsigned long flags, complex float* dst, const complex float* src)
+{
+	// Get the total number of elements
+	long relevant_dims[N];
+	md_select_dims(N, flags, relevant_dims, dims);
+
+	unsigned int first_case_element = md_find_first_case_element(N, dims);
+	unsigned int case_element = md_find_last_case_element(N, flags, first_case_element);
+	long total_elements = md_calc_size(N, dims);
+	long inner_elements = md_calc_size(first_case_element+1, dims);
+	long outer_loop_size = total_elements / inner_elements;
+	
+	// Compute whether the first element is 1 or -1 depending on the array sizes.
+        double tmp_phase = .0;
+        for (int p =  0; p < N ; p++) {
+                if (relevant_dims[p] > 1)
+                        tmp_phase += fftmod_phase(relevant_dims[p], 0);
+        }
+
+        double rem = tmp_phase - floor(tmp_phase);
+        float initial_phase = .0;
+        if (rem == 0.)
+                initial_phase = 1.;
+        else if (rem == 0.5)
+                initial_phase = -1.;
+
+	// Check what case is this by looking at the innermost dimensions
+	if (!MD_IS_SET(flags, case_element)) {
+		// Case #1: the innermost dimensions are not flagged, thus elements are multiplied by the same value
+		#pragma omp parallel for
+		for (long ol = 0; ol < outer_loop_size; ol++) {
+			// Capture the phase for the first element and the other will be the same
+
+			long iter_i[N];
+			long ii = ol * inner_elements;
+			long phase_idx = 0;
+		
+			for (int p =  0; p < N && ii > 0; p++) {
+				if (dims[p] <=1)
+					continue;
+				iter_i[p] = ii % dims[p];
+				ii /= dims[p];
+				// Compute also the phase and the position in the src and dst arrays
+				phase_idx += iter_i[p] * (relevant_dims[p] > 1);
+			}
+
+			float phase = (phase_idx % 2 == 0) * initial_phase + (phase_idx % 2 == 1) * (-initial_phase);
+			long last_element = (ol+1) * inner_elements;
+
+			#pragma omp simd
+			for (long il = ol * inner_elements; il < last_element; il++) {
+				dst[il] = src[il] * phase;
+			}
+		}
+	} else {
+		// Case #2: the innermost dimensions are flagged, thus elements are multiplied by phases with alternating sign
+		#pragma omp parallel for
+		for (long ol = 0; ol < outer_loop_size; ol++) {
+			// Capture the phase for the first element and the other will be alternating for the innermost block
+
+			long iter_i[N];
+			long ii = ol * inner_elements;
+			long phase_idx = 0;
+		
+			for (int p =  0; p < N && ii > 0; p++) {
+				if (dims[p] <=1)
+					continue;
+				iter_i[p] = ii % dims[p];
+				ii /= dims[p];
+				// Compute also the phase and the position in the src and dst arrays
+				phase_idx += iter_i[p] * (relevant_dims[p] > 1);
+			}
+			float phase = (phase_idx % 2 == 0) * initial_phase + (phase_idx % 2 == 1) * (-initial_phase);
+			long last_element = (ol+1) * inner_elements;
+
+			#pragma omp simd
+			for (long il = ol * inner_elements; il < last_element; il++) {
+				float alt_phase = (il % 2 == 0) * phase + (il % 2 == 1) * (-phase);
+				dst[il] = src[il] * alt_phase;
+			}
+		}
+	}
+}
+
+
 static unsigned long clear_singletons(unsigned int N, const long dims[N], unsigned long flags)
 {
        return (0 == N) ? flags : clear_singletons(N - 1, dims, (1 == dims[N - 1]) ? MD_CLEAR(flags, N - 1) : flags);
@@ -128,22 +237,35 @@ void ifftmod2(unsigned int N, const long dims[N], unsigned long flags, const lon
 
 void fftmod(unsigned int N, const long dimensions[N], unsigned long flags, complex float* dst, const complex float* src)
 {
-	long strs[N];
-	md_calc_strides(N, strs, dimensions, CFL_SIZE);
-	fftmod2(N, dimensions, flags, strs, dst, strs, src);
+	long relevant_dims[N];
+	md_select_dims(N, flags, relevant_dims, dimensions);
+
+	if (!md_calc_all_modulo(N, relevant_dims, 4)) {
+		// If at least one active dimensions (size >1) is not modulo 4 then fall back to general code
+		long strs[N];
+		md_calc_strides(N, strs, dimensions, CFL_SIZE);
+		fftmod2(N, dimensions, flags, strs, dst, strs, src);
+	} else {
+		// Otherwise run faster code case
+		fftmod_even(N, dimensions, clear_singletons(N, dimensions, flags), dst, src);
+	}
 }
 
 void ifftmod(unsigned int N, const long dimensions[N], unsigned long flags, complex float* dst, const complex float* src)
 {
-	long strs[N];
-	md_calc_strides(N, strs, dimensions, CFL_SIZE);
-	ifftmod2(N, dimensions, flags, strs, dst, strs, src);
+	long relevant_dims[N];
+	md_select_dims(N, flags, relevant_dims, dimensions);
+
+	if (!md_calc_all_modulo(N, relevant_dims, 4)) {
+		// If at least one active dimensions (size >1) is not modulo 4 then fall back to general code
+		long strs[N];
+		md_calc_strides(N, strs, dimensions, CFL_SIZE);
+		ifftmod2(N, dimensions, flags, strs, dst, strs, src);
+	} else {
+		// Otherwise run faster code case
+		fftmod_even(N, dimensions, clear_singletons(N, dimensions, flags), dst, src);
+	}
 }
-
-
-
-
-
 
 void ifftshift2(unsigned int N, const long dims[N], unsigned long flags, const long ostrs[N], complex float* dst, const long istrs[N], const complex float* src)
 {

@@ -1,15 +1,15 @@
 /* Copyright 2015. The Regents of the University of California.
  * Copyright 2015. Tao Zhang and Joseph Cheng.
- * Copyright 2016. Martin Uecker.
+ * Copyright 2016-2018. Martin Uecker.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
  *
- * Authors: 
+ * Authors:
  * 2014-2015 Frank Ong <frankong@berkeley.edu>
  * 2014 Tao Zhang
  * 2014 Joseph Cheng 
  * 2014 Jon Tamir 
- * 2014-2016 Martin Uecker
+ * 2014-2018 Martin Uecker
  */
 
 #include <stdlib.h>
@@ -31,10 +31,8 @@
 
 #include "num/multind.h"
 #include "num/flpmath.h"
-#include "num/lapack.h"
 #include "num/linalg.h"
 #include "num/ops.h"
-#include "num/iovec.h"
 #include "num/blockproc.h"
 #include "num/casorati.h"
 
@@ -52,7 +50,6 @@ struct lrthresh_data_s {
 
 	float lambda;
 	bool randshift;
-	bool use_gpu;
 	bool noise;
 	int remove_mean; 
 
@@ -72,7 +69,7 @@ static DEF_TYPEID(lrthresh_data_s);
 
 
 
-static struct lrthresh_data_s* lrthresh_create_data(const long dims_decom[DIMS], bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, bool noise, int remove_mean, bool use_gpu);
+static struct lrthresh_data_s* lrthresh_create_data(const long dims_decom[DIMS], bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, bool noise, int remove_mean);
 static void lrthresh_free_data(const operator_data_t* data);
 static void lrthresh_apply(const operator_data_t* _data, float lambda, complex float* dst, const complex float* src);
 
@@ -86,12 +83,11 @@ static void lrthresh_applyX(const operator_data_t* _data, float lambda, complex 
  * @param randshift - randshift boolean
  * @param mflags - selects which dimensions gets reshaped as the first dimension in matrix
  * @param blkdims - contains block dimensions for all levels
- * @param use_gpu - gpu boolean
  *
  */
-const struct operator_p_s* lrthresh_create(const long dims_lev[DIMS], bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, bool noise, int remove_mean, bool use_gpu)
+const struct operator_p_s* lrthresh_create(const long dims_lev[DIMS], bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, bool noise, int remove_mean)
 {
-	struct lrthresh_data_s* data = lrthresh_create_data(dims_lev, randshift, mflags, blkdims, lambda, noise, remove_mean, use_gpu);
+	struct lrthresh_data_s* data = lrthresh_create_data(dims_lev, randshift, mflags, blkdims, lambda, noise, remove_mean);
 
 	return operator_p_create(DIMS, dims_lev, DIMS, dims_lev, CAST_UP(data), lrthresh_apply, lrthresh_free_data);
 }
@@ -105,10 +101,9 @@ const struct operator_p_s* lrthresh_create(const long dims_lev[DIMS], bool rands
  * @param randshift - randshift boolean
  * @param mflags - selects which dimensions gets reshaped as the first dimension in matrix
  * @param blkdims - contains block dimensions for all levels
- * @param use_gpu - gpu boolean
  *
  */
-static struct lrthresh_data_s* lrthresh_create_data(const long dims_decom[DIMS], bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, bool noise, int remove_mean, bool use_gpu)
+static struct lrthresh_data_s* lrthresh_create_data(const long dims_decom[DIMS], bool randshift, unsigned long mflags, const long blkdims[MAX_LEV][DIMS], float lambda, bool noise, int remove_mean)
 {
 	PTR_ALLOC(struct lrthresh_data_s, data);
 	SET_TYPEID(lrthresh_data_s, data);
@@ -135,8 +130,6 @@ static struct lrthresh_data_s* lrthresh_create_data(const long dims_decom[DIMS],
 			data->blkdims[l][i] = blkdims[l][i];
 	}
 
-	data->use_gpu = use_gpu;
-	
 	return PTR_PASS(data);
 }
 
@@ -235,12 +228,7 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 		const int blkdim = blkdims[PHS1_DIM];
 		mylrthresh(srcl, dstl, lambda * GWIDTH(M, N, B), dim1, dim0, nimg, nmaps, blkdim, shifts[PHS2_DIM], shifts[PHS1_DIM]);
 #else
-		complex float* tmp;
-#ifdef USE_CUDA
-		tmp = (data->use_gpu ? md_alloc_gpu : md_alloc)(DIMS, zpad_dims, CFL_SIZE);
-#else
-		tmp = md_alloc(DIMS, zpad_dims, CFL_SIZE);
-#endif
+		complex float* tmp = md_alloc_sameplace(DIMS, zpad_dims, CFL_SIZE, dst);
 
 		md_circ_ext(DIMS, zpad_dims, tmp, data->dims, srcl, CFL_SIZE);
 		md_circ_shift(DIMS, zpad_dims, shifts, tmp, tmp, CFL_SIZE);
@@ -248,12 +236,8 @@ static void lrthresh_apply(const operator_data_t* _data, float mu, complex float
 		long mat_dims[2];
 		basorati_dims(DIMS, mat_dims, blkdims, zpad_dims);
 
-		complex float* tmp_mat;
-#ifdef USE_CUDA
-		tmp_mat = (data->use_gpu ? md_alloc_gpu : md_alloc)(2, mat_dims, CFL_SIZE);
-#else
-		tmp_mat = md_alloc(2, mat_dims, CFL_SIZE);
-#endif
+		complex float* tmp_mat = md_alloc_sameplace(2, mat_dims, CFL_SIZE, dst);
+
 		// Reshape image into a blk_size x number of blocks matrix
 
 		basorati_matrix(DIMS, blkdims, mat_dims, tmp_mat, zpad_dims, zpad_strs, tmp);

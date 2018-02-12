@@ -25,6 +25,7 @@
 #include "num/init.h"
 
 #include "calib/calib.h"
+#include "calib/cc.h"
 #include "calib/estvar.h"
 
 #ifndef CFL_SIZE
@@ -49,6 +50,8 @@ int main_ecalib(int argc, char* argv[])
 	bool one = false;
 	bool calcen = false;
 	bool print_svals = false;
+
+	const char* cal_data_file = NULL;
 
 	struct ecalib_conf conf = ecalib_defaults;
 
@@ -75,6 +78,7 @@ int main_ecalib(int argc, char* argv[])
 		OPT_INT('n', &conf.numsv, "", "()"),
 		OPT_FLOAT('v', &conf.var, "variance", "Variance of noise in data."),
 		OPT_SET('a', &conf.automate, "Automatically pick thresholds."),
+		OPT_STRING('o', &cal_data_file, "<cal_data>", "(save calibration data to <cal_data>)"),
 	};
 
 	cmdline(&argc, argv, 2, 3, usage_str, help_str, ARRAY_SIZE(opts), opts);
@@ -151,6 +155,15 @@ int main_ecalib(int argc, char* argv[])
 			error("Calibration region not found!\n");
 
 
+	 if (NULL != cal_data_file) {
+
+		 complex float* tmp = create_cfl(cal_data_file, 5, cal_dims);
+		 md_copy(5, cal_dims, tmp, cal_data, CFL_SIZE);
+		 md_free(cal_data);
+		 cal_data = tmp;
+	 }
+
+
 	// To reproduce old results turn off rotation of phase.
 	// conf.rotphase = false;
 
@@ -170,6 +183,7 @@ int main_ecalib(int argc, char* argv[])
 		assert(caldims[3] == out_dims[3]);
 		assert(maps <= channels);
 #endif
+
 		long cov_dims[4];
 
 		calone_dims(&conf, cov_dims, channels);
@@ -236,7 +250,11 @@ int main_ecalib(int argc, char* argv[])
 	printf("Done.\n");
 
 	unmap_cfl(N, ksp_dims, in_data);
-	md_free(cal_data);
+
+	if (NULL == cal_data_file)
+		md_free(cal_data);
+	else
+		unmap_cfl(5, cal_dims, cal_data);
 
 	exit(0);
 }

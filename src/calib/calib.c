@@ -148,10 +148,10 @@ void crop_sens(const long dims[DIMS], complex float* ptr, bool soft, float crth,
  *	calreg_dims     - Dimension of the calibration region.
  *	calreg	        - Calibration data.
  */
-static float sure_crop(float var, const long evec_dims[5], complex float* evec_data, complex float* eptr, const long calreg_dims[4], const complex float* calreg)
+float sure_crop(float var, const long evec_dims[5], complex float* evec_data, complex float* eptr, const long calreg_dims[4], const complex float* calreg)
 {
 	// Must be in ascending order.
-        float start = 0.7;
+        float start = 0.9;
         float delta = 0.01;
 
 	long num_cvals = (long) (((1 - delta - start)/delta) + 1);

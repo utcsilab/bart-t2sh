@@ -37,6 +37,7 @@ extern void calib2(const struct ecalib_conf* conf, const long out_dims[DIMS], _C
 extern void eigenmaps(const long out_dims[DIMS], _Complex float* out_data, _Complex float* eptr, const _Complex float* imgcov, const long msk_dims[3], const _Bool* msk, _Bool orthiter, _Bool usegpu);
 
 
+extern float sure_crop(float var, const long evec_dims[5], _Complex float* evec_data, _Complex float* eptr, const long calreg_dims[4], const _Complex float* calreg);
 extern void crop_sens(const long dims[DIMS], _Complex float* ptr, bool soft, float crth, const _Complex float* map);
 
 extern void calone_dims(const struct ecalib_conf* conf, long cov_dims[4], long channels);

@@ -95,13 +95,15 @@ static void toimg_stack(const char* name, bool dicom, bool single_scale, bool us
 
 	long sq_dims[DIMS] = { [0 ... DIMS - 1] = 1 };
 
+	float max = 0.;
+
 	int l = 0;
 
 	for (int i = 0; i < DIMS; i++)
 		if (1 != dims[i])
 			sq_dims[l++] = dims[i];
 
-	float max = 0.;
+
 	for (long i = 0; i < data_size; i++)
 		max = MAX(cabsf(data[i]), max);
 

@@ -79,6 +79,7 @@ int main_ecalib(int argc, char* argv[])
 		OPT_FLOAT('v', &conf.var, "variance", "Variance of noise in data."),
 		OPT_SET('a', &conf.automate, "Automatically pick thresholds."),
 		OPT_STRING('o', &cal_data_file, "<cal_data>", "(save calibration data to <cal_data>)"),
+		OPT_INT('d', &debug_level, "level", "Debug level"),
 	};
 
 	cmdline(&argc, argv, 2, 3, usage_str, help_str, ARRAY_SIZE(opts), opts);

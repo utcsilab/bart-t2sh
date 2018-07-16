@@ -24,6 +24,10 @@ DEBUG?=0
 FFTWTHREADS?=1
 ISMRMRD?=0
 
+LOG_BACKEND?=0
+LOG_SIEMENS_BACKEND?=1
+LOG_ORCHESTRA_BACKEND?=0
+LOG_GADGETRON_BACKEND?=0
 DESTDIR ?= /
 PREFIX ?= usr/local/
 
@@ -355,6 +359,24 @@ else
 ISMRM_H :=
 ISMRM_L :=
 endif
+
+# Logging backends
+
+ifeq ($(LOG_BACKEND),1)
+	CPPFLAGS += -I$(srcdir)/src/misc
+	ifeq ($(LOG_SIEMENS_BACKEND),1)
+		miscextracxxsrcs = $(srcdir)/misc/UTrace.cc
+	endif
+	ifeq ($(LOG_ORCHESTRA_BACKEND),1)
+		miscextracxxsrcs = $(srcdir)/misc/Orchestra.cc
+	endif
+	ifeq ($(LOG_GADGETRON_BACKEND),1)
+		miscextracxxsrcs = $(srcdir)/misc/Gadgetron.cc
+	endif
+else
+miscextracxxsrcs = 
+endif
+
 
 # change for static linking
 

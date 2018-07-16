@@ -256,7 +256,7 @@ int main_ecalib(int argc, char* argv[])
 	else
 		unmap_cfl(5, cal_dims, cal_data);
 
-	exit(0);
+	return 0;
 }
 
 

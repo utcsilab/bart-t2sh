@@ -237,7 +237,7 @@ else
 
 CPPFLAGS += $(DEPFLAG) -I$(srcdir)/
 CFLAGS += -std=gnu11 -I$(srcdir)/
-CXXFLAGS += -I$(srcdir)/
+CXXFLAGS += -std=c++11 -I$(srcdir)/
 
 
 

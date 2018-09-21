@@ -9,6 +9,7 @@ void jtmodel_normal_benchmark_fast_parallel(
 		_Complex float *dst, const _Complex float *src,
     		const unsigned long dim0,
     		const unsigned long dim1,
+    		const unsigned long ncoils,
     		const unsigned long nmaps,
     		const unsigned long nimg,
 		DFTI_DESCRIPTOR_HANDLE plan1d, DFTI_DESCRIPTOR_HANDLE plan1d_1,
@@ -20,8 +21,9 @@ void jtmodel_adjoint_benchmark_fast_parallel(
     _Complex float * dst, const _Complex float * src,
     const unsigned long dim0,
     const unsigned long dim1,
+    const unsigned long ncoils,
     const unsigned long nmaps,
-    const unsigned long nimg,
+    const unsigned long ncfimg,
     DFTI_DESCRIPTOR_HANDLE plan2d,
     _Complex float * cfksp3);
 

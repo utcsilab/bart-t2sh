@@ -314,17 +314,20 @@ static void jtmodel_adjoint(const linop_data_t* _data, complex float* dst, const
 {
 	const struct jtmodel_data* data = CAST_DOWN(jtmodel_data, _data);
 #ifdef USE_INTEL_KERNELS
-	const unsigned long nmaps = data->sens_dims[COIL_DIM];
-	const unsigned long nimg = data->cfimg_dims[COEFF_DIM];
+	const unsigned long ncoils = data->sens_dims[COIL_DIM];
+	const unsigned long nmaps = data->sens_dims[MAPS_DIM];
+	const unsigned long ncfimg = data->cfimg_dims[COEFF_DIM];
 	int dim0 = data->sens_dims[PHS1_DIM];
 	int dim1 = data->sens_dims[PHS2_DIM];
+
 	jtmodel_adjoint_benchmark_fast_parallel(data->sens,
                                              dst,
 					     src,
 					     dim0,
 					     dim1,
+					     ncoils,
 					     nmaps,
-					     nimg,
+					     ncfimg,
 					     data->plan2d,
 					     data->cfksp3);
 #else
@@ -359,9 +362,10 @@ static void jtmodel_intel_normal(const linop_data_t* _data, complex float* dst, 
 
 	}
 
-	const unsigned long nmaps = data->sens_dims[COIL_DIM];
+	const unsigned long ncoils = data->sens_dims[COIL_DIM];
+	const unsigned long nmaps = data->sens_dims[MAPS_DIM];
 	const unsigned long nimg = data->cfimg_dims[COEFF_DIM];
-	jtmodel_normal_benchmark_fast_parallel(data->sens, sdata->stkern_mat_trans, dst, src, dim0, dim1, nmaps, nimg, data->plan1d_0, data->plan1d_1, data->cfksp3, data->cfksp4);
+	jtmodel_normal_benchmark_fast_parallel(data->sens, sdata->stkern_mat_trans, dst, src, dim0, dim1, ncoils, nmaps, nimg, data->plan1d_0, data->plan1d_1, data->cfksp3, data->cfksp4);
 
 }
 #endif

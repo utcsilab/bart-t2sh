@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
                                                   sizeof(complex float)); 
 
   jtmodel_adjoint_benchmark_fast_parallel(sens, dst, src, dim0,
-                                dim1, nmaps, nimg, plan2d, cfksp3);
+                                dim1, nmaps, 2, nimg, plan2d, cfksp3);
   free(cfksp3);
 
   double diff = 0.0;

@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
                                                   sizeof(complex float)); 
 
   jtmodel_normal_benchmark_fast_parallel(sens, stkern_mat_trans, dst, src, dim0,
-                                dim1, nmaps, nimg, plan1d_0, plan1d_1, cfksp3, cfksp4);
+                                dim1, nmaps, 2, nimg, plan1d_0, plan1d_1, cfksp3, cfksp4);
   free(cfksp3);
   free(cfksp4);
 

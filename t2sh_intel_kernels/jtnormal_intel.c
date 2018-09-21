@@ -79,154 +79,173 @@ void jtmodel_normal_benchmark_fast_parallel(
     complex float * dst, const complex float * src,
     const unsigned long dim0,
     const unsigned long dim1,
+    const unsigned long ncoils,
     const unsigned long nmaps,
-    const unsigned long nimg,
+    const unsigned long ncfimg,
     DFTI_DESCRIPTOR_HANDLE plan1d_0, DFTI_DESCRIPTOR_HANDLE plan1d_1,
     complex float * cfksp3,
     complex float * cfksp4) {
 
-  struct timeval start, end;
-  int nthr = omp_get_max_threads();
-  int P = (dim1 + nthr-1) / nthr;
-  int P0 = (dim0 + nthr-1) / nthr;
-  float sc = 1.0 / sqrt((double)dim0 * dim1);
+	struct timeval start, end;
+	int nthr = omp_get_max_threads();
+	int P = (dim1 + nthr-1) / nthr;
+	int P0 = (dim0 + nthr-1) / nthr;
+	float sc = 1.0 / sqrt((double)dim0 * dim1);
 
-  for(int map = 0 ; map < nmaps ; map++)
-  {
-    #pragma omp parallel num_threads(nthr)
-    {
-      int tid = omp_get_thread_num();
-      int row_start = tid * P;
-      int row_end = (tid+1) * P;
-      if(row_end > dim1) row_end = dim1;
+	assert(nmaps == 1 || nmaps == 2);
 
-      for(int img = 0 ; img < nimg ; img++)
-      {
-        for(int row = row_start ; row < row_end; row++)
-        {
-          const complex float *map0 = sens + map * dim1 * dim0 + dim0 * row;
-          const complex float *map1 =
-              sens + map * dim1 * dim0 + nmaps * dim0 * dim1 + dim0 * row;
-          const  complex float *img0 = src + img * dim0 * dim1 * 2 + dim0 * row;
-          const complex float *img1 =
-              src + dim0 * dim1 + img * dim0 * dim1 * 2 + dim0 * row;
-          complex float *cor_out =
-              cfksp3 + img * dim1 * dim0 + dim0 * row;
+	for(int coil = 0 ; coil < ncoils ; coil++)
+	{
+#pragma omp parallel num_threads(nthr)
+		{
+			int tid = omp_get_thread_num();
+			int row_start = tid * P;
+			int row_end = (tid+1) * P;
+			if(row_end > dim1) row_end = dim1;
 
-          #pragma simd
-          for (int i = 0; i < dim0; i++) {
-            cor_out[i] = (map0[i] * img0[i] + map1[i] * img1[i]) * sc;
-          }
-          DftiComputeForward(plan1d_0, cor_out, cor_out);
-        }
+			for(int cfimg = 0 ; cfimg < ncfimg ; cfimg++)
+			{
+				for(int row = row_start ; row < row_end; row++)
+				{
+					const complex float *map0 = sens + coil * dim1 * dim0 + dim0 * row;
+					const complex float *map1 = NULL;
+					if (nmaps == 2)
+						map1 = sens + coil * dim1 * dim0 + ncoils * dim0 * dim1 + dim0 * row;
+					const  complex float *cfimg0 = src + cfimg * dim0 * dim1 * nmaps + dim0 * row;
+					const complex float *cfimg1 = NULL;
+					if (nmaps == 2)
+						cfimg1 = src + dim0 * dim1 + cfimg * dim0 * dim1 * nmaps + dim0 * row;
+					complex float *cor_out =
+						cfksp3 + cfimg * dim1 * dim0 + dim0 * row;
 
-        complex float *cor_out =
-            cfksp3 + img * dim1 * dim0 + dim0 * row_start;
-        complex float *cor_out2 =
-            cfksp4 + img * dim1 * dim0 + row_start;
-	
-	TransposePanel(cor_out, cor_out2, row_end-row_start, tid, dim0, dim1);
-      }
-    }
+#pragma simd
+					for (int i = 0; i < dim0; i++) {
+						if (nmaps == 2)
+							cor_out[i] = (map0[i] * cfimg0[i] + map1[i] * cfimg1[i]) * sc;
+						else
+							cor_out[i] = (map0[i] * cfimg0[i]) * sc;
+					}
+					DftiComputeForward(plan1d_0, cor_out, cor_out);
+				}
 
-    #pragma omp parallel num_threads(nthr)
-    {
-      int tid = omp_get_thread_num();
-      int row_start = tid * P0;
-      int row_end = (tid+1) * P0;
-      if(row_end > dim0) row_end = dim0;
-      complex float * stkern_tmp = (complex float*) malloc(dim1 * nimg * sizeof(complex float));
-      for (int row = row_start ; row < row_end ; row++) {
-        for(int img = 0 ; img < nimg ; img++)
-        {
-          complex float *cor_out =
-              cfksp4 + img * dim1 * dim0 + dim1 * row;
-          DftiComputeForward(plan1d_1, cor_out, cor_out);
-        }
-        for(int img_i = 0 ; img_i < nimg ; img_i++)
-        {
-          complex float *tmp = stkern_tmp + img_i * dim1;
-          for (int img_j = 0; img_j < nimg; img_j++) {
-            complex float *img_in = cfksp4 + 
-                                    img_j * dim0 * dim1 + row * dim1;
-            const float *mat = (img_i > img_j) ? stkern_mat + img_i * dim1 * dim0 + img_j * dim1 * dim0 * nimg + row * dim1 :
-                                           stkern_mat + img_j * dim1 * dim0 + img_i * dim1 * dim0 * nimg + row * dim1;
-	  if(img_j == 0)
-	  {
-	   #pragma simd
-	    for (int pix = 0; pix < dim1; pix++) {
-              tmp[pix] = (img_in[pix] * mat[pix]);
-            }
-	  }
-	  else
-	  {
-	   #pragma simd
-	    for (int pix = 0; pix < dim1; pix++) {
-              tmp[pix] += (img_in[pix] * mat[pix]);
-            }
-          }
-	  }
-          DftiComputeBackward(plan1d_1, tmp, tmp);
+				complex float *cor_out =
+					cfksp3 + cfimg * dim1 * dim0 + dim0 * row_start;
+				complex float *cor_out2 =
+					cfksp4 + cfimg * dim1 * dim0 + row_start;
+
+				TransposePanel(cor_out, cor_out2, row_end-row_start, tid, dim0, dim1);
+			}
+		}
+
+#pragma omp parallel num_threads(nthr)
+		{
+			int tid = omp_get_thread_num();
+			int row_start = tid * P0;
+			int row_end = (tid+1) * P0;
+			if(row_end > dim0) row_end = dim0;
+			complex float * stkern_tmp = (complex float*) malloc(dim1 * ncfimg * sizeof(complex float));
+			for (int row = row_start ; row < row_end ; row++) {
+				for(int cfimg = 0 ; cfimg < ncfimg ; cfimg++)
+				{
+					complex float *cor_out =
+						cfksp4 + cfimg * dim1 * dim0 + dim1 * row;
+					DftiComputeForward(plan1d_1, cor_out, cor_out);
+				}
+				for(int cfimg_i = 0 ; cfimg_i < ncfimg ; cfimg_i++)
+				{
+					complex float *tmp = stkern_tmp + cfimg_i * dim1;
+					for (int cfimg_j = 0; cfimg_j < ncfimg; cfimg_j++) {
+						complex float *cfimg_in = cfksp4 + 
+							cfimg_j * dim0 * dim1 + row * dim1;
+						const float *mat = (cfimg_i > cfimg_j) ? stkern_mat + cfimg_i * dim1 * dim0 + cfimg_j * dim1 * dim0 * ncfimg + row * dim1 :
+							stkern_mat + cfimg_j * dim1 * dim0 + cfimg_i * dim1 * dim0 * ncfimg + row * dim1;
+						if(cfimg_j == 0)
+						{
+#pragma simd
+							for (int pix = 0; pix < dim1; pix++) {
+								tmp[pix] = (cfimg_in[pix] * mat[pix]);
+							}
+						}
+						else
+						{
+#pragma simd
+							for (int pix = 0; pix < dim1; pix++) {
+								tmp[pix] += (cfimg_in[pix] * mat[pix]);
+							}
+						}
+					}
+					DftiComputeBackward(plan1d_1, tmp, tmp);
+				}
+				for(int cfimg_i = 0 ; cfimg_i < ncfimg ; cfimg_i++)
+				{
+					complex float *cfimg_in = cfksp4 + 
+						cfimg_i * dim0 * dim1 + row * dim1;
+#pragma simd
+					for (int pix = 0; pix < dim1; pix++) {
+						cfimg_in[pix] = stkern_tmp[pix + cfimg_i*dim1];
+					}
+				}
+			}
+			free(stkern_tmp);
+
+			for(int cfimg_i = 0 ; cfimg_i < ncfimg ; cfimg_i++)
+			{
+				complex float *cfimg_in = cfksp4 + 
+					cfimg_i * dim0 * dim1 + row_start * dim1;
+				complex float *cfimg_in2 = cfksp3 + 
+					cfimg_i * dim0 * dim1 + row_start;
+				TransposePanel(cfimg_in, cfimg_in2, row_end-row_start, tid, dim1, dim0);
+			}
+		}
+
+#pragma omp parallel num_threads(nthr)
+		{
+			int tid = omp_get_thread_num();
+			int row_start = tid * P;
+			int row_end = (tid+1) * P;
+			if(row_end > dim1) row_end = dim1;
+			for (int row = row_start ; row < row_end ; row++) {
+				for (int cfimg = 0; cfimg < ncfimg; cfimg++) {
+					const complex float *map0 = sens + coil*dim1*dim0 + row * dim0;
+					const complex float *map1 = NULL;
+					if (nmaps == 2)
+						map1 = sens + coil*dim1*dim0 + ncoils *dim0 * dim1 + row * dim0;
+					complex float *cor0 = dst + cfimg *dim1*dim0*nmaps + row * dim0;
+					complex float* cor1 = NULL;
+					if (nmaps == 2)
+						cor1 = dst + dim1*dim0+cfimg*dim1*dim0*nmaps + row * dim0;
+					complex float *cfimg_in = cfksp3 + cfimg*dim0*dim1 + row * dim0;
+					DftiComputeBackward(plan1d_0, cfimg_in, cfimg_in);
+					if(coil == 0)
+					{
+#pragma simd
+						for (int i = 0; i < dim0; i++) {
+							cor0[i] = 0;
+							if (nmaps == 2)
+								cor1[i] = 0;
+						}
+					}
+#pragma simd
+					for (int i = 0; i < dim0; i++) {
+						float r0 = __real__ map0[i];
+						float i0 = __imag__ map0[i];
+						float r1 = 0;
+						float i1 = 0;
+						if (nmaps == 2) {
+
+							r1 = __real__ map1[i];
+							i1 = __imag__ map1[i];
+						}
+						float _r = __real__ cfimg_in[i];
+						float _i = __imag__ cfimg_in[i];
+						cor0[i] += ((r0 * _r + i0 * _i) + (r0 * _i - i0 * _r) * _Complex_I) * sc;
+						if (nmaps == 2)
+							cor1[i] += ((r1 * _r + i1 * _i) + (r1 * _i - i1 * _r) * _Complex_I) * sc;
+					}
+				}
+			}
+		}
 	}
-        for(int img_i = 0 ; img_i < nimg ; img_i++)
-        {
-          complex float *img_in = cfksp4 + 
-                                 img_i * dim0 * dim1 + row * dim1;
-#pragma simd
-          for (int pix = 0; pix < dim1; pix++) {
-            img_in[pix] = stkern_tmp[pix + img_i*dim1];
-          }
-        }
-      }
-      free(stkern_tmp);
-
-    for(int img_i = 0 ; img_i < nimg ; img_i++)
-    {
-      complex float *img_in = cfksp4 + 
-                               img_i * dim0 * dim1 + row_start * dim1;
-      complex float *img_in2 = cfksp3 + 
-                               img_i * dim0 * dim1 + row_start;
-      TransposePanel(img_in, img_in2, row_end-row_start, tid, dim1, dim0);
-    }
-    }
-
-    #pragma omp parallel num_threads(nthr)
-    {
-      int tid = omp_get_thread_num();
-      int row_start = tid * P;
-      int row_end = (tid+1) * P;
-      if(row_end > dim1) row_end = dim1;
-      for (int row = row_start ; row < row_end ; row++) {
-        for (int img = 0; img < nimg; img++) {
-          const complex float *map0 = sens + map*dim1*dim0 + row * dim0;
-          const complex float *map1 = sens + map*dim1*dim0 + nmaps *dim0 * dim1 + row * dim0;
-          complex float *cor0 = dst + img *dim1*dim0*2 + row * dim0;
-          complex float *cor1 = dst + dim1*dim0+img*dim1*dim0*2 + row * dim0;
-          complex float *img_in = cfksp3 + img*dim0*dim1 + row * dim0;
-          DftiComputeBackward(plan1d_0, img_in, img_in);
-          if(map == 0)
-          {
-#pragma simd
-            for (int i = 0; i < dim0; i++) {
-              cor0[i] = 0;
-              cor1[i] = 0;
-            }
-          }
-#pragma simd
-          for (int i = 0; i < dim0; i++) {
-            float r0 = __real__ map0[i];
-            float r1 = __real__ map1[i];
-            float i0 = __imag__ map0[i];
-            float i1 = __imag__ map1[i];
-            float _r = __real__ img_in[i];
-            float _i = __imag__ img_in[i];
-            cor0[i] += ((r0 * _r + i0 * _i) + (r0 * _i - i0 * _r) * _Complex_I) * sc;
-            cor1[i] += ((r1 * _r + i1 * _i) + (r1 * _i - i1 * _r) * _Complex_I) * sc;
-          }
-        }
-      }
-    }
-  }
 }
 
 void jtmodel_adjoint_benchmark_fast_parallel(
@@ -234,47 +253,60 @@ void jtmodel_adjoint_benchmark_fast_parallel(
     complex float * dst, const complex float * src,
     const unsigned long dim0,
     const unsigned long dim1,
+    const unsigned long ncoils,
     const unsigned long nmaps,
-    const unsigned long nimg,
+    const unsigned long ncfimg,
     DFTI_DESCRIPTOR_HANDLE plan2d,
     complex float * cfksp3)
 {
-  float sc = 1.0 / sqrt((double)dim0 * dim1);
-  for(int map = 0 ; map < nmaps ; map++)
-  {
-    const complex float * map0 = sens + map * dim0 * dim1;
-    const complex float * map1 = sens + map * dim0 * dim1 + nmaps * dim0*dim1;
+	assert(nmaps == 1 || nmaps == 2);
+	float sc = 1.0 / sqrt((double)dim0 * dim1);
+	for(int coil = 0 ; coil < ncoils ; coil++)
+	{
+		const complex float * map0 = sens + coil * dim0 * dim1;
+		const complex float * map1 = NULL;
+		if (nmaps == 2)
+			map1 = sens + coil * dim0 * dim1 + ncoils * dim0*dim1;
 
-    for(int img = 0 ; img < nimg ; img++)
-    {
-      complex float * ksp = (complex float*)src + map*dim0*dim1 + img*nmaps*dim0*dim1;
-      DftiComputeBackward(plan2d, ksp, cfksp3);
+		for(int cfimg = 0 ; cfimg < ncfimg ; cfimg++)
+		{
+			complex float * ksp = (complex float*)src + coil*dim0*dim1 + cfimg*ncoils*dim0*dim1;
 
-      complex float * cor0 = dst + 2 * img * dim0 * dim1;
-      complex float * cor1 = dst + 2 * img * dim0 * dim1 + dim0*dim1;
+			DftiComputeBackward(plan2d, ksp, cfksp3);
 
-      if(map == 0)
-      {
+			complex float * cor0 = dst + nmaps * cfimg * dim0 * dim1;
+			complex float * cor1 = NULL;
+			if (nmaps == 2)
+				cor1 = dst + nmaps * cfimg * dim0 * dim1 + dim0*dim1;
+
+			if(coil == 0)
+			{
 #pragma omp parallel for
 #pragma simd
-        for (int i = 0; i < dim0*dim1; i++) {
-          cor0[i] = 0;
-          cor1[i] = 0;
-        }
-      }
+				for (int i = 0; i < dim0*dim1; i++) {
+					cor0[i] = 0;
+					if (nmaps == 2)
+						cor1[i] = 0;
+				}
+			}
 #pragma omp parallel for
 #pragma simd
-      for (int i = 0; i < dim0*dim1; i++) {
-        float r0 = __real__ map0[i];
-        float r1 = __real__ map1[i];
-        float i0 = __imag__ map0[i];
-        float i1 = __imag__ map1[i];
-        float _r = __real__ cfksp3[i];
-        float _i = __imag__ cfksp3[i];
-        cor0[i] += ((r0 * _r + i0 * _i) + (r0 * _i - i0 * _r) * _Complex_I) * sc;
-        cor1[i] += ((r1 * _r + i1 * _i) + (r1 * _i - i1 * _r) * _Complex_I) * sc;
-      }
-    }
-  }
+			for (int i = 0; i < dim0*dim1; i++) {
+				float r0 = __real__ map0[i];
+				float i0 = __imag__ map0[i];
+				float r1 = 0.;
+				float i1 = 0;
+				if (nmaps == 2) {
+					r1 = __real__ map1[i];
+					i1 = __imag__ map1[i];
+				}
+				float _r = __real__ cfksp3[i];
+				float _i = __imag__ cfksp3[i];
+				cor0[i] += ((r0 * _r + i0 * _i) + (r0 * _i - i0 * _r) * _Complex_I) * sc;
+				if (nmaps == 2)
+					cor1[i] += ((r1 * _r + i1 * _i) + (r1 * _i - i1 * _r) * _Complex_I) * sc;
+			}
+		}
+	}
 }
 

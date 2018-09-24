@@ -53,6 +53,7 @@
 #include "misc/opts.h"
 
 #include "grecon/optreg.h"
+#include "grecon/italgo.h"
 
 #include "jtsense/jtrecon.h"
 #include "jtsense/jtmodel.h"
@@ -107,6 +108,8 @@ int main_t2sh_pics(int argc, char* argv[])
 	float admm_rho = iter_admm_defaults.rho;
 	unsigned int admm_maxitercg = iter_admm_defaults.maxitercg;
 
+	enum algo_t algo = ALGO_DEFAULT;
+
 
 	struct opt_reg_s ropts;
 	assert(0 == opt_reg_init(&ropts));
@@ -121,7 +124,7 @@ int main_t2sh_pics(int argc, char* argv[])
 		OPT_UINT('i', &maxiter, "iter", "max. number of iterations"),
 		OPT_CLEAR('n', &randshift, "disable random shifting"),
 		OPT_INT('g', &gpun, "gpun", "Use GPU device gpun"),
-		OPT_SELECT('I', enum algo_t, &ropts.algo, IST, "\tselect IST"),
+		OPT_SELECT('I', enum algo_t, &algo, ALGO_IST, "\tselect IST"),
 		OPT_UINT('b', &llr_blk, "blk", "Lowrank block size"),
 		OPT_SET('H', &hogwild, "hogwild"),
 		OPT_SET('F', &conf.fast, "fast"),
@@ -130,7 +133,7 @@ int main_t2sh_pics(int argc, char* argv[])
 		OPT_STRING('S', &stkern_file, "<stkern>", "Use precomputed stkern mat <stkern>"),
 		OPT_FLOAT('u', &admm_rho, "rho", "ADMM rho"),
 		OPT_UINT('C', &admm_maxitercg, "iter", "ADMM max. CG iterations"),
-		OPT_SELECT('m', enum algo_t, &ropts.algo, ADMM, "\tSelect ADMM"),
+		OPT_SELECT('m', enum algo_t, &algo, ALGO_ADMM, "\tSelect ADMM"),
 		OPT_FLOAT('w', &scaling, "val", "scaling"),
 		OPT_UINT('K', &conf.K, "K", "Number of temporal coefficients"),
 	};
@@ -405,11 +408,13 @@ int main_t2sh_pics(int argc, char* argv[])
 
 	int nr_penalties = ropts.r;
 	struct reg_s* regs = ropts.regs;
-	enum algo_t algo = ropts.algo;
 
 
 	// -----------------------------------------------------------
 	// initialize algorithm
+
+	if (ALGO_DEFAULT == algo)
+		algo = italgo_choose(nr_penalties, regs);
 
 	italgo_fun2_t italgo = iter2_call_iter;
 	struct iter_call_s iter2_data;
@@ -422,16 +427,18 @@ int main_t2sh_pics(int argc, char* argv[])
 	struct iter_ist_conf isconf;
 	struct iter_admm_conf mmconf;
 
-	if ((CG == algo) && (1 == nr_penalties) && (L2IMG != regs[0].xform))
-		algo = FISTA;
+#if 0
+	if ((ALGO_CG == algo) && (1 == nr_penalties) && (L2IMG != regs[0].xform))
+		algo = ALGO_FISTA;
 
 	if (nr_penalties > 1)
-		algo = ADMM;
+		algo = ALGO_ADMM;
+#endif
 
 
 	switch (algo) {
 
-		case CG:
+		case ALGO_CG:
 
 			debug_printf(DP_INFO, "conjugate gradients\n");
 
@@ -448,7 +455,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 			break;
 
-		case IST:
+		case ALGO_IST:
 
 			debug_printf(DP_INFO, "IST\n");
 
@@ -465,7 +472,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 			break;
 
-		case ADMM:
+		case ALGO_ADMM:
 
 			debug_printf(DP_INFO, "ADMM\n");
 
@@ -487,7 +494,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 			break;
 
-		case FISTA:
+		case ALGO_FISTA:
 
 			debug_printf(DP_INFO, "FISTA\n");
 
@@ -511,7 +518,7 @@ int main_t2sh_pics(int argc, char* argv[])
 
 
 	const struct operator_s* t2sh_pics_op = operator_t2sh_pics_create(&conf, italgo, iconf, forward_op, nr_penalties, thresh_ops,
-				(ADMM == algo) ? trafos : NULL, NULL, cfimg_truth, use_gpu);
+				(ALGO_ADMM == algo) ? trafos : NULL, NULL, cfimg_truth, use_gpu);
 
 	double op_start = timestamp();
 	operator_apply(t2sh_pics_op, DIMS, cfimg_dims, cfimg, DIMS, cfksp_dims, cfksp);

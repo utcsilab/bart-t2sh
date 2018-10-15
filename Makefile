@@ -319,7 +319,7 @@ endif
 
 
 # png
-PNG_L ?= -lpng
+PNG_L ?= -lpng -lz
 PNG_H ?= 
 
 ifeq ($(SLINK),1)

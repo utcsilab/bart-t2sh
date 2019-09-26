@@ -355,10 +355,8 @@ int main_t2sh_pics(int argc, char* argv[])
 	debug_printf(DP_DEBUG2, "max_dims_sens =\t");
 	debug_print_dims(DP_DEBUG2, DIMS, max_dims_sens);
 
-
-	long sens_flags = (FFT_FLAGS | SENS_FLAGS);
-	if (max_dims_sens[CSHIFT_DIM] > 1)
-		sens_flags = MD_SET(sens_flags, CSHIFT_DIM);
+	long sens_flags = md_nontriv_dims(DIMS, sens_dims);
+	sens_flags |= (FFT_FLAGS | SENS_FLAGS);
 
 	double rescale_start = timestamp();
 #ifndef USE_INTEL_KERNELS
